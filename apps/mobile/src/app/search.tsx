@@ -23,6 +23,7 @@ import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { NativeTabHeader } from '@/components/native-tab-header';
 import { NavBarLeadingMenu, navBarLeadingMenuItem } from '@/components/nav-bar-leading-menu';
+import { SearchScopeRow } from '@/components/search-scope-row';
 import { useSearchSourceMenu } from '@/components/search-source-menu';
 import { SearchSources } from '@/components/search-sources';
 import { ThemedText } from '@/components/themed-text';
@@ -50,6 +51,7 @@ import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useOpenLink } from '@/hooks/use-open-link';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
+import { useSearchBarTrial } from '@/hooks/use-search-bar-trial';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -629,23 +631,52 @@ export default function SearchScreen({
     setTyped('');
     setQuery('');
   };
+  // Whether the field is in use: from its first focus to its ✕, the system's own active search,
+  // which outlasts the keyboard. While it is, the bar goes (`hides`, the system's default) and its
+  // items come down into a row under the field, or it stays, titled or not (Settings → Developer).
+  const barTrial = useSearchBarTrial();
+  const [searching, setSearching] = useState(false);
+  const barHides = tab && barTrial === 'hides';
+  const scopeRow =
+    barHides && searching && !(isComical && !typedTerm) ? (
+      <SearchScopeRow
+        scopes={[{ id: COMICAL_BRIDGE_ID, name: 'Everything' }, ...sources]}
+        thumbnails={bridgeThumbnails}
+        selected={currentBridge && !isComical ? currentBridge.id : COMICAL_BRIDGE_ID}
+        onSelect={setBridge}
+        filters={hasFilters ? { count: activeFilterCount, onPress: openFilters } : undefined}
+        sort={
+          sortOptions.length > 0
+            ? { options: sortOptions, current: currentSortKey, onSelect: (key) => setSortValue({ key, ascending: true }) }
+            : undefined
+        }
+      />
+    ) : null;
   const nativeItems = nativeBar ? (
     <>
-      {tab ? <NativeTabHeader title="Search" largeTitle="always" barTitle={false} /> : <Stack.Screen options={{ title: '' }} />}
+      {tab ? (
+        <NativeTabHeader title="Search" largeTitle="always" barTitle={barTrial === 'titled' && searching} />
+      ) : (
+        <Stack.Screen options={{ title: '' }} />
+      )}
       <Stack.SearchBar
         ref={searchBarRef}
         placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
         placement={tab ? 'stacked' : 'integratedCentered'}
         hideWhenScrolling={false}
-        // Held through a search everywhere. Left to the system, the search tab's bar went while the
-        // field was in use, and the source menu, filters and sort with it, which the App Store's
-        // floating field can do without and this search can't; the bar's leaving jumped the page too.
-        hideNavigationBar={false}
+        // The system's default on the tab, its items coming down under the field (`scopeRow`). Held
+        // through a search elsewhere, since a pushed search's bar holds its back button.
+        hideNavigationBar={barHides}
         obscureBackground={false}
         autoCapitalize="none"
         onChangeText={(e) => setTyped(e.nativeEvent.text)}
         onSearchButtonPress={(e) => submit(e.nativeEvent.text)}
-        onCancelButtonPress={tab ? clear : goBack}
+        onFocus={() => setSearching(true)}
+        onCancelButtonPress={() => {
+          setSearching(false);
+          if (tab) clear();
+          else goBack();
+        }}
       />
       {(tab || hasFilters || sortOptions.length > 0) && (
         <Stack.Toolbar placement="right">
@@ -837,7 +868,7 @@ export default function SearchScreen({
                 rows={comicalRows}
                 scopeKey={searched || 'blank'}
                 listRef={listRef}
-                header={comicalHint}
+                header={scopeRow ? <>{scopeRow}{comicalHint}</> : comicalHint}
                 paddingTop={listTop}
                 paddingBottom={listBottom}
                 sharedValues={sharedValues}
@@ -855,7 +886,7 @@ export default function SearchScreen({
                 items={gridItems}
                 scopeKey={scopeKey}
                 listRef={listRef}
-                header={emptyBody}
+                header={scopeRow ? <>{scopeRow}{emptyBody}</> : emptyBody}
                 // The top bar OVERLAYS the list (results scroll behind it), so reserve it as well
                 // as the filter bar beneath it, plus a little breathing room.
                 paddingTop={listTop}

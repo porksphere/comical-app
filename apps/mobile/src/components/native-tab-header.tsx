@@ -47,14 +47,15 @@ export function NativeTabHeader({
   filter,
   placeholder,
   largeTitle = 'inline',
-  barTitle = true,
+  barTitle,
 }: {
   title: string;
   filter?: TabFilter;
   placeholder?: string;
   /** `always` for the search tab, whose field is stacked under a title that collapses on scroll. */
   largeTitle?: 'inline' | 'always';
-  /** False for the search tab: its large title scrolls with the page, and with its bar kept through
+  /** Set for the search tab, whose large title is then set apart from the bar's small one, shown
+   *  only while this is true: the large title scrolls with the page, and with the bar kept through
    *  a search the small title stood in the bar over it; nor is it wanted beside a side column. */
   barTitle?: boolean;
 }) {
@@ -82,7 +83,8 @@ export function NativeTabHeader({
       {NavBarLargeTitle ? (
         <NavBarLargeTitle
           mode={largeTitle}
-          largeTitle={barTitle ? undefined : title}
+          largeTitle={barTitle === undefined ? undefined : title}
+          barTitle={barTitle ? title : ''}
           report={REPORT_BAR_TITLE}
           onReport={(e) => logDiagnostic('nav-bar-title', e.nativeEvent.message)}
           style={styles.pin}

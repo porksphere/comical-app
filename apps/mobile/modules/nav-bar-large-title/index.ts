@@ -15,9 +15,10 @@ import type { ViewProps } from 'react-native';
 
 export type NavBarLargeTitleProps = ViewProps & {
   mode: 'inline' | 'always' | 'never';
-  /** iOS 26+: the large title's own text, with the bar's small title left empty, so the title is
-   *  over the page and never in the bar as well. */
+  /** iOS 26+: the large title's own text, set apart from the bar's small title, which is then
+   *  `barTitle` or empty, so the title is over the page and in the bar only when asked for. */
   largeTitle?: string;
+  barTitle?: string;
   /** Describe what UIKit does with the bar through `onReport`: the item's mode and search setup,
    *  changes made to the mode under it, and the bar's height as it moves. */
   report?: boolean;

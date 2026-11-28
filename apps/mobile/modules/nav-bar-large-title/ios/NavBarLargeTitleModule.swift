@@ -15,6 +15,10 @@ public class NavBarLargeTitleModule: Module {
         view.largeTitle = largeTitle
       }
 
+      Prop("barTitle") { (view: NavBarLargeTitleView, barTitle: String?) in
+        view.barTitle = barTitle
+      }
+
       Prop("report") { (view: NavBarLargeTitleView, report: Bool) in
         view.report = report
       }
@@ -41,10 +45,12 @@ public class NavBarLargeTitleModule: Module {
 /// large title collapses on scroll where no other tab's does, and these are what tell it apart.
 final class NavBarLargeTitleView: ExpoView {
   var mode = "inline"
-  /// The large title's own text (iOS 26's `largeTitle`), with the bar's small `title` cleared to nil:
-  /// the large title scrolls with the content, and a page whose bar stays through a search would
-  /// otherwise show the small title in the bar over the large one still in the list.
+  /// The large title's own text (iOS 26's `largeTitle`), set apart from the bar's small `title`,
+  /// which is then `barTitle` or nil: the large title scrolls with the content, and a page whose bar
+  /// stays through a search would otherwise show the small title in the bar over the large one
+  /// still in the list.
   var largeTitle: String?
+  var barTitle: String?
   var report = false
   let onReport = EventDispatcher()
 
@@ -136,8 +142,9 @@ final class NavBarLargeTitleView: ExpoView {
       if navigationItem.largeTitle != largeTitle {
         navigationItem.largeTitle = largeTitle
       }
-      if navigationItem.title != nil {
-        navigationItem.title = nil
+      let small = barTitle?.isEmpty == false ? barTitle : nil
+      if navigationItem.title != small {
+        navigationItem.title = small
       }
     }
   }

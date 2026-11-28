@@ -107,12 +107,17 @@ standard one that collapses into the bar (`NativeTabHeader`'s `largeTitle="alway
 field hangs off that title's own row, which the tabs' `inline` title doesn't have. Its list is the
 one the system insets by the bars (`systemInsets`), as a native app's is: that title shrinks with
 the finger only over such a list, and padded for its bar by hand, as every other list here is, it
-snapped between its sizes and the list jumped with the bar. The bar stays while the field is in
-use: the source menu, filters and sort are in it. Its title is the large title alone (iOS 26's
-`largeTitle`, with the small `title` nil, through `nav-bar-large-title`; `NativeTabHeader`'s
-`barTitle={false}`): since iOS 26 a large title scrolls with the content, and with the bar kept
-through a search the small title stood in the bar over the large one still in the list, and in a
-side-column layout the bar held a "Search" with nothing beside it. That tab is the
+snapped between its sizes and the list jumped with the bar. While the field is in use the bar
+goes, the system's default (`hidesNavigationBarDuringPresentation`), and the source, filters and
+sort it held come down into a row under the field, where Music puts its scope bar
+(`SearchScopeRow`): the sources a scrolling row of glass buttons with their tiles, since a scope
+bar holds two or three. Kept instead, the bar was a row with nothing in it beside a side column,
+and one lone button over the field in portrait; the kept bar, titled or not, stays as a trial in
+Settings → Developer (`useSearchBarTrial`). Its title is the large title set apart from the small
+one (iOS 26's `largeTitle`, the small `title` nil unless the titled trial asks for it, through
+`nav-bar-large-title`; `NativeTabHeader`'s `barTitle`): since iOS 26 a large title scrolls with the
+content, and with the bar kept through a search the small title stood in the bar over the large
+one still in the list. That tab is the
 Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
 filters), and before anything is typed it lists the sources (`SearchSources`). That menu is Browse's
 kind (`useSearchSourceMenu` through `NavBarLeadingMenu`): the picked source's circle as the button

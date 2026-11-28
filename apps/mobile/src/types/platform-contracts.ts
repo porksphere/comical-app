@@ -12,6 +12,8 @@ import type * as SelectPillBar from '@/components/multi-select/select-pill-bar';
 import type * as SelectPillBarIos from '@/components/multi-select/select-pill-bar.ios';
 import type * as RecentSwitch from '@/components/recent/recent-switch';
 import type * as RecentSwitchIos from '@/components/recent/recent-switch.ios';
+import type * as SearchScopeRow from '@/components/search-scope-row';
+import type * as SearchScopeRowIos from '@/components/search-scope-row.ios';
 import type * as ImageProgress from '@/components/reader/image-progress';
 import type * as ImageProgressWeb from '@/components/reader/image-progress.web';
 import type * as IntStepper from '@/components/reader/int-stepper';
@@ -130,6 +132,7 @@ export type PlatformContracts = [
   Conforms<Drift<typeof FloatOver, typeof FloatOverWeb>>,
   Conforms<Drift<typeof OverflowMenu, typeof OverflowMenuAndroid>>,
   Conforms<Drift<typeof RecentSwitch, typeof RecentSwitchIos>>,
+  Conforms<Drift<typeof SearchScopeRow, typeof SearchScopeRowIos>>,
   Conforms<Drift<typeof ImageProgress, typeof ImageProgressWeb>>,
   Conforms<Drift<typeof DrawLayout, typeof DrawLayoutWeb>>,
   Conforms<Drift<typeof IntStepper, typeof IntStepperAndroid>>,

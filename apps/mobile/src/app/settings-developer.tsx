@@ -16,12 +16,19 @@ import {
   useSeriesStickerRead,
   type HomeHeroStyle,
 } from '@/hooks/use-home-bookshelf';
+import { setSearchBarTrial, useSearchBarTrial, type SearchBarTrial } from '@/hooks/use-search-bar-trial';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 
 const HERO_STYLES = [
   { value: 'shelf', label: '3D bookshelf' },
   { value: 'splash', label: 'Cover splash' },
   { value: 'poster', label: 'Poster' },
+] as const;
+
+const SEARCH_BARS = [
+  { value: 'hides', label: 'Hides, buttons under the field' },
+  { value: 'titled', label: 'Stays, titled' },
+  { value: 'kept', label: 'Stays, buttons only' },
 ] as const;
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
@@ -36,6 +43,7 @@ export default function DeveloperSettingsScreen() {
   const shelfStats = useHomeBookshelfStats();
   const stickerRead = useSeriesStickerRead();
   const heroStyle = useHomeHeroStyle();
+  const searchBar = useSearchBarTrial();
 
   const sections: SettingsFormSection[] = [
     {
@@ -71,6 +79,15 @@ export default function DeveloperSettingsScreen() {
           options: HERO_STYLES,
           onChange: setHomeHeroStyle,
           testID: 'settings.developer.home-hero',
+        }),
+        select<SearchBarTrial>({
+          label: 'Search tab bar while searching',
+          description:
+            'A trial, iOS only. What the Search tab’s bar does while its field is in use: goes, as the App Store’s does, with the source, filters and sort in a row under the field; stays with a small “Search” in it; or stays with only its buttons.',
+          value: searchBar,
+          options: SEARCH_BARS,
+          onChange: setSearchBarTrial,
+          testID: 'settings.developer.search-bar',
         }),
         {
           kind: 'toggle',
