@@ -43,7 +43,9 @@ final class NavBarLargeTitleView: ExpoView {
   private weak var navigationItem: UINavigationItem?
   private var observation: NSKeyValueObservation?
   private var barObservation: NSKeyValueObservation?
+  private var scrollObservation: NSKeyValueObservation?
   private var lastBarHeight: CGFloat = -1
+  private var lastTitle = ""
   private var reports = 0
 
   /// Enough for an open, a few scrolls and a return, and no more: each lands in a persisted log.
@@ -102,6 +104,7 @@ final class NavBarLargeTitleView: ExpoView {
         return
       }
       self.send("settled " + self.describe(controller))
+      self.watchScroll(controller)
     }
   }
 
@@ -114,6 +117,27 @@ final class NavBarLargeTitleView: ExpoView {
     }
     if navigationItem.largeTitleDisplayMode != wanted {
       navigationItem.largeTitleDisplayMode = wanted
+    }
+  }
+
+  /// The title can change without the bar changing height (the search tab's collapses so), so the
+  /// list's scroll is watched too, and a line written whenever the title views or the search's
+  /// state differ from the last line's.
+  private func watchScroll(_ controller: UIViewController) {
+    guard #available(iOS 15.0, *), let scroll = controller.contentScrollView(for: .top) else {
+      return
+    }
+    scrollObservation = scroll.observe(\.contentOffset, options: [.new]) { [weak self, weak controller] scroll, _ in
+      guard let self, let controller, let bar = controller.navigationController?.navigationBar else {
+        return
+      }
+      let active = controller.navigationItem.searchController?.isActive ?? false
+      let state = "active=\(active) " + self.largeTitleViews(in: bar)
+      guard state != self.lastTitle else {
+        return
+      }
+      self.lastTitle = state
+      self.send("scroll y=\(Int(scroll.contentOffset.y.rounded())) bar=\(Int(bar.bounds.height.rounded())) " + state)
     }
   }
 
@@ -174,7 +198,8 @@ final class NavBarLargeTitleView: ExpoView {
     func walk(_ view: UIView, depth: Int) {
       let name = String(describing: type(of: view))
       if name.contains("LargeTitle") || name.contains("TitleControl") {
-        found.append("\(name)(h=\(Int(view.bounds.height.rounded())) a=\(String(format: "%.2f", view.alpha))\(view.isHidden ? " hidden" : ""))")
+        let font = firstLabel(in: view).map { " font=\(Int($0.font.pointSize.rounded()))" } ?? ""
+        found.append("\(name)(h=\(Int(view.bounds.height.rounded())) a=\(String(format: "%.2f", view.alpha))\(font)\(view.isHidden ? " hidden" : ""))")
       }
       if depth < 6 {
         for sub in view.subviews {
@@ -185,6 +210,18 @@ final class NavBarLargeTitleView: ExpoView {
     walk(bar, depth: 0)
     return found.isEmpty ? "titleViews=none" : "titleViews=" + found.joined(separator: ",")
   }
+}
+
+private func firstLabel(in view: UIView) -> UILabel? {
+  if let label = view as? UILabel, !(label.text ?? "").isEmpty {
+    return label
+  }
+  for sub in view.subviews {
+    if let label = firstLabel(in: sub) {
+      return label
+    }
+  }
+  return nil
 }
 
 private func name(of mode: UINavigationItem.LargeTitleDisplayMode) -> String {
