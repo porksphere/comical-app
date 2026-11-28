@@ -47,12 +47,16 @@ export function NativeTabHeader({
   filter,
   placeholder,
   largeTitle = 'inline',
+  barTitle = true,
 }: {
   title: string;
   filter?: TabFilter;
   placeholder?: string;
   /** `always` for the search tab, whose field is stacked under a title that collapses on scroll. */
   largeTitle?: 'inline' | 'always';
+  /** False for the search tab: its large title scrolls with the page, and with its bar kept through
+   *  a search the small title stood in the bar over it; nor is it wanted beside a side column. */
+  barTitle?: boolean;
 }) {
   // The tab's name in the title typeface (lib/title-font), once it has loaded.
   const titleFont = useTitleFont();
@@ -78,6 +82,7 @@ export function NativeTabHeader({
       {NavBarLargeTitle ? (
         <NavBarLargeTitle
           mode={largeTitle}
+          largeTitle={barTitle ? undefined : title}
           report={REPORT_BAR_TITLE}
           onReport={(e) => logDiagnostic('nav-bar-title', e.nativeEvent.message)}
           style={styles.pin}

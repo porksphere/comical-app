@@ -11,6 +11,10 @@ public class NavBarLargeTitleModule: Module {
         view.mode = mode
       }
 
+      Prop("largeTitle") { (view: NavBarLargeTitleView, largeTitle: String?) in
+        view.largeTitle = largeTitle
+      }
+
       Prop("report") { (view: NavBarLargeTitleView, report: Bool) in
         view.report = report
       }
@@ -37,11 +41,16 @@ public class NavBarLargeTitleModule: Module {
 /// large title collapses on scroll where no other tab's does, and these are what tell it apart.
 final class NavBarLargeTitleView: ExpoView {
   var mode = "inline"
+  /// The large title's own text (iOS 26's `largeTitle`), with the bar's small `title` cleared to nil:
+  /// the large title scrolls with the content, and a page whose bar stays through a search would
+  /// otherwise show the small title in the bar over the large one still in the list.
+  var largeTitle: String?
   var report = false
   let onReport = EventDispatcher()
 
   private weak var navigationItem: UINavigationItem?
   private var observation: NSKeyValueObservation?
+  private var titleObservation: NSKeyValueObservation?
   private var barObservation: NSKeyValueObservation?
   private var scrollObservation: NSKeyValueObservation?
   private var lastBarHeight: CGFloat = -1
@@ -84,6 +93,10 @@ final class NavBarLargeTitleView: ExpoView {
       return
     }
     navigationItem = item
+    // react-native-screens sets the title back on every header update.
+    titleObservation = item.observe(\.title, options: [.new]) { [weak self] _, _ in
+      self?.apply()
+    }
     observation = item.observe(\.largeTitleDisplayMode, options: [.old, .new]) { [weak self] _, change in
       guard let self else {
         return
@@ -117,6 +130,15 @@ final class NavBarLargeTitleView: ExpoView {
     }
     if navigationItem.largeTitleDisplayMode != wanted {
       navigationItem.largeTitleDisplayMode = wanted
+    }
+    // nil, never "": a blank text title is drawn as a pair of quotation marks.
+    if #available(iOS 26.0, *), let largeTitle, !largeTitle.isEmpty {
+      if navigationItem.largeTitle != largeTitle {
+        navigationItem.largeTitle = largeTitle
+      }
+      if navigationItem.title != nil {
+        navigationItem.title = nil
+      }
     }
   }
 
@@ -155,7 +177,7 @@ final class NavBarLargeTitleView: ExpoView {
       return
     }
     reports += 1
-    let title = navigationItem?.title ?? "?"
+    let title = navigationItem?.title ?? largeTitle ?? "?"
     onReport(["message": "[\(title)] \(message)"])
   }
 

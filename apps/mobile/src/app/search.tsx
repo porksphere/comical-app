@@ -631,7 +631,7 @@ export default function SearchScreen({
   };
   const nativeItems = nativeBar ? (
     <>
-      {tab ? <NativeTabHeader title="Search" largeTitle="always" /> : <Stack.Screen options={{ title: '' }} />}
+      {tab ? <NativeTabHeader title="Search" largeTitle="always" barTitle={false} /> : <Stack.Screen options={{ title: '' }} />}
       <Stack.SearchBar
         ref={searchBarRef}
         placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
