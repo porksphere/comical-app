@@ -4,6 +4,7 @@ import { StyleSheet } from 'react-native';
 
 import { useHoldAction } from '@/components/hold-action-target';
 import type { TabFilter } from '@/components/tab-filter';
+import { logDiagnostic } from '@/lib/diagnostics';
 import { HIDDEN_TOP_EDGE } from '@/lib/native-bar';
 import { useTitleFont } from '@/lib/title-font';
 import { VerticalBarEdgeReporter } from '@/lib/vertical-bar-edge';
@@ -37,6 +38,10 @@ import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
  * own row, and under the `inline` title the bar lost its title and the list jumped as it came
  * and went.
  */
+/** Temporary: every tab writes what UIKit does with its bar to Diagnostics, to find why the search
+ *  tab's inline large title collapses on scroll where no other tab's does. Off once that is known. */
+const REPORT_BAR_TITLE = true;
+
 export function NativeTabHeader({ title, filter, placeholder }: { title: string; filter?: TabFilter; placeholder?: string }) {
   // The tab's name in the title typeface (lib/title-font), once it has loaded.
   const titleFont = useTitleFont();
@@ -59,7 +64,15 @@ export function NativeTabHeader({ title, filter, placeholder }: { title: string;
           onCancelButtonPress={filter.close}
         />
       ) : null}
-      {NavBarLargeTitle ? <NavBarLargeTitle mode="inline" style={styles.pin} pointerEvents="none" /> : null}
+      {NavBarLargeTitle ? (
+        <NavBarLargeTitle
+          mode="inline"
+          report={REPORT_BAR_TITLE}
+          onReport={(e) => logDiagnostic('nav-bar-title', e.nativeEvent.message)}
+          style={styles.pin}
+          pointerEvents="none"
+        />
+      ) : null}
       {NavBarHold ? <TitleHold /> : null}
       <VerticalBarEdgeReporter />
     </>

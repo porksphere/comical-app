@@ -15,6 +15,10 @@ import type { ViewProps } from 'react-native';
 
 export type NavBarLargeTitleProps = ViewProps & {
   mode: 'inline' | 'always' | 'never';
+  /** Describe what UIKit does with the bar through `onReport`: the item's mode and search setup,
+   *  changes made to the mode under it, and the bar's height as it moves. */
+  report?: boolean;
+  onReport?: (event: { nativeEvent: { message: string } }) => void;
 };
 
 export const NavBarLargeTitle: ComponentType<NavBarLargeTitleProps> | null = requireOptionalNativeModule('NavBarLargeTitle')
