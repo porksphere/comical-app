@@ -33,6 +33,11 @@ type NavLayout = {
    *  re-derived from width downstream (see `navInsetFor`). A screen asks this to decide whether a
    *  control of its own is now a duplicate of one the rail is already showing. */
   sidebar: boolean;
+  /** A tab's own screen, as opposed to a pane laid over the content region beside the sidebar. */
+  tabRoot: boolean;
+  /** The nav lists each tab's scopes (Browse's bridges, Recent's views) as rows of their own: the
+   *  labelled sidebar, not the icon rail, which shows the destinations alone. */
+  listsScopes: boolean;
 };
 
 const NavLayoutContext = createContext<NavLayout | null>(null);
@@ -40,13 +45,20 @@ const NavLayoutContext = createContext<NavLayout | null>(null);
 export function ContentWidthProvider({
   width,
   sidebar,
+  tabRoot = false,
+  listsScopes = false,
   children,
 }: {
   width: number;
   sidebar: boolean;
+  tabRoot?: boolean;
+  listsScopes?: boolean;
   children: React.ReactNode;
 }) {
-  const value = useMemo(() => ({ contentWidth: width, sidebar }), [width, sidebar]);
+  const value = useMemo(
+    () => ({ contentWidth: width, sidebar, tabRoot, listsScopes }),
+    [width, sidebar, tabRoot, listsScopes],
+  );
   return <NavLayoutContext.Provider value={value}>{children}</NavLayoutContext.Provider>;
 }
 
@@ -59,6 +71,19 @@ export function useContentWidth(): number {
 /** True only where the rail is actually rendered — false on every screen that covers it. */
 export function useHasSidebar(): boolean {
   return useContext(NavLayoutContext)?.sidebar ?? false;
+}
+
+/** True on a tab's own screen while the sidebar is the nav: where the desktop's bars are drawn
+ *  (`useGlassChrome`). A pane over the content region keeps its own opaque bar. */
+export function useIsSidebarTabRoot(): boolean {
+  const layout = useContext(NavLayoutContext);
+  return !!layout?.sidebar && layout.tabRoot;
+}
+
+/** Whether the nav beside this subtree lists the tabs' scopes, so a screen's own control for one
+ *  would be a second control for the same choice. */
+export function useSidebarListsScopes(): boolean {
+  return useContext(NavLayoutContext)?.listsScopes ?? false;
 }
 
 export type SideInsets = { left: number; right: number };

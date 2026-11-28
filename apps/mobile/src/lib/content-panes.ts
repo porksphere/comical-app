@@ -1,7 +1,7 @@
 /**
  * The four panes over a tab's content region, taken together — see `lib/pane-tab` for the keys.
  *
- * In stacking order they are the rail's search results and Browse's Search at the bottom, "See all"
+ * In stacking order they are the search field's results and Browse's Search at the bottom, "See all"
  * over them, and the series over everything; what a tab's destination row clears when pressed on the
  * tab you are already on is all of them at once.
  */

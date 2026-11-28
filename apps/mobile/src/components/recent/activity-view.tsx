@@ -23,16 +23,16 @@ import { RetryBlock } from '@/components/retry-block';
 import { RowHairline } from '@/components/row-hairline';
 import { SeriesCardMenu } from '@/components/series-card-menu';
 import { SwipeableRow } from '@/components/settings/swipeable-row';
-import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
-import { NativeTabHeader } from '@/components/native-tab-header';
+import { RecentBar } from '@/components/recent/recent-bar';
+import { RecentSwitch } from '@/components/recent/recent-switch';
+import { useTabFilter } from '@/components/tab-filter';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
-import { TabTitleBar } from '@/components/tab-title-bar';
 import { EmptyMessage } from '@/components/empty-message';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { showToast } from '@/components/toast';
 import { useZoomId, withZoomSource } from '@/components/zoom-source';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { autoDownloadNewChapters } from '@/data/downloads/auto';
 import { activityQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
@@ -41,10 +41,9 @@ import type { ActivityEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useCenterInset, useSideInsets } from '@/hooks/use-content-width';
-import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
-import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
@@ -57,24 +56,24 @@ import { scrollbarInset } from '@/lib/scrollbar-inset';
 /** Stable, so the zoom surface registers once rather than every render — see useZoomSurfaceList. */
 const activitySeriesId = (item: SeriesActivity) => item.seriesId;
 
-export default function ActivityScreen() {
+/** The Recent tab's New chapters: the unread chapters of what you follow, a row a series. */
+export function ActivityView({ ready }: { ready: boolean }) {
   const ds = useDataSource();
   const mock = useMockActive();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
-  const filter = useTabFilter();
+  const filter = useTabFilter('recent');
   const query = filter.query;
   const queryClient = useQueryClient();
   const { nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   const rowTransition = useRowTransition(ROW_REORDER_TRANSITION);
-  useScrollToTopOnReselect('activity', listRef);
+  useScrollToTopOnReselect('recent', listRef);
 
   // This list as a zoom surface — see AGENTS.md → Zoom transitions.
   const zoomSurface = useZoomSurfaceKey('activity');
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
-  const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(activityQuery(ds, mock));
 
@@ -229,7 +228,8 @@ export default function ActivityScreen() {
     <ZoomSurfaceContext.Provider value={zoomSurface}>
       <ThemedView style={styles.container} {...pull.touchHandlers}>
       {emptyBody ? (
-        <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
+        <View style={[styles.centeredColumn, { paddingTop: listPaddingTop(headerHeight) }]}>
+          <RecentSwitch />
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
@@ -240,6 +240,7 @@ export default function ActivityScreen() {
               // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
               style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
               data={rows}
+              ListHeaderComponent={<RecentSwitch />}
               keyExtractor={(g) => `${g.bridgeId}:${g.seriesId}`}
               recycleItems={false}
               itemLayoutAnimation={rowTransition}
@@ -292,20 +293,7 @@ export default function ActivityScreen() {
       )}
 
       <PullIndicator {...pull.indicator} top={headerHeight} />
-      {NATIVE_HEADER ? (
-        <NativeTabHeader title="Activity" filter={filter} placeholder="Filter activity…" />
-      ) : (
-        <TabTitleBar
-          title="Activity"
-          holdTestID="activity.nsfw-hold"
-          titleSlot={
-            filter.open ? (
-              <TabFilterField filter={filter} testID="activity.search" placeholder="Filter activity…" />
-            ) : undefined
-          }
-          right={<TabFilterTrigger filter={filter} testID="activity.search" placeholder="Filter activity…" />}
-        />
-      )}
+      <RecentBar view="new" filter={filter} />
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );
@@ -419,6 +407,29 @@ function ActivityItem({
             startRadius={6} // matches HistoryRow's thumbnail corner
             zoomSource={zoomSource}
             measureRef={thumbRef}
+            rowActions={[
+              ...(item.hasUnread
+                ? [
+                    {
+                      label: 'Mark read',
+                      Icon: CheckIcon,
+                      symbol: 'checkmark.circle',
+                      loading: false,
+                      testID: 'activity-row.menu.mark-read',
+                      onPress: onMarkRead,
+                    },
+                  ]
+                : []),
+              {
+                label: 'Clear',
+                Icon: TrashIcon,
+                symbol: 'trash',
+                loading: false,
+                destructive: true,
+                testID: 'activity-row.menu.clear',
+                onPress: onRemove,
+              },
+            ]}
             onOpen={() => onRead(null)}>
             {({ hidden }) => renderRow(hidden)}
           </SeriesCardMenu>

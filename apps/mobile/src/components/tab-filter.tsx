@@ -6,13 +6,16 @@ import { SearchIcon } from '@/components/icons/ui-icons';
 import { SearchField } from '@/components/search-field';
 import { Spacing } from '@/constants/theme';
 import { useHasSidebar } from '@/hooks/use-content-width';
+import { useGlassChrome } from '@/hooks/use-glass-chrome';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
 import { useTheme } from '@/hooks/use-theme';
+import { usePaneKeyOf } from '@/lib/pane-tab';
+import { focusSidebarSearch, useSidebarSearchTyped } from '@/lib/sidebar-search';
 
 export type TabFilter = ReturnType<typeof useTabFilter>;
 
 /**
- * The in-place filter Library, History and Activity share: the screen narrows what it already shows
+ * The in-place filter Library and Recent share: the screen narrows what it already shows
  * as you type. Ctrl+F focuses it on whichever tab is in front.
  *
  * Beside the rail it is a field that is always in the bar's trailing slot, emptied rather than
@@ -20,11 +23,21 @@ export type TabFilter = ReturnType<typeof useTabFilter>;
  * title's place, with a back chevron that closes it.
  *
  * Not the Search screen's job: that one finds series you DON'T have, across bridges, on submit.
+ *
+ * On the desktop (`useGlassChrome`) the bar already ends in the shell's search field, and a filter
+ * field beside it was two search bars. So there the filter has no field of its own: what is typed
+ * into the shell's narrows this tab as it is typed, and Enter is what searches the bridges
+ * (lib/sidebar-search). `tab` is the screen's own, since a tab's screen stays mounted behind the
+ * one in front and must not narrow itself by what is typed there.
  */
-export function useTabFilter() {
-  const docked = useHasSidebar();
+export function useTabFilter(tab: 'library' | 'recent') {
+  const sidebar = useHasSidebar();
+  const shell = useGlassChrome();
+  const shellTyped = useSidebarSearchTyped(usePaneKeyOf(tab));
+  const docked = sidebar && !shell;
   const [opened, setOpened] = useState(false);
-  const [query, setQuery] = useState('');
+  const [ownQuery, setQuery] = useState('');
+  const query = shell ? shellTyped : ownQuery;
   const [focusRequest, setFocusRequest] = useState(0);
   const close = () => {
     setOpened(false);
@@ -34,6 +47,7 @@ export function useTabFilter() {
   useKeyboardShortcut(
     'filter',
     () => {
+      if (shell) return focusSidebarSearch();
       if (!docked) setOpened(true);
       setFocusRequest((n) => n + 1);
     },
@@ -41,8 +55,8 @@ export function useTabFilter() {
   );
   // A query typed beside the rail outlives a resize below it, where it keeps the field open rather
   // than filtering the screen out of sight.
-  const open = !docked && (opened || !!query);
-  return { docked, open, query, setQuery, focusRequest, show, close };
+  const open = !docked && !shell && (opened || !!query);
+  return { docked, shell, open, query, setQuery, focusRequest, show, close };
 }
 
 /** The bar's leading content while the filter is open: a back chevron that closes it, and the field. */
@@ -79,7 +93,7 @@ export function TabFilterField({ filter, testID, placeholder }: { filter: TabFil
 /** The bar's trailing filter control: the field itself beside the rail, an icon that opens it below. */
 export function TabFilterTrigger({ filter, testID, placeholder }: { filter: TabFilter; testID: string; placeholder: string }) {
   const theme = useTheme();
-  if (filter.open) return null;
+  if (filter.open || filter.shell) return null;
   return filter.docked ? (
     <View style={styles.docked}>
       <SearchField

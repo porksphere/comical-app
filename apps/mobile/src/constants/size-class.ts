@@ -25,19 +25,19 @@ export const sizeClassFor = (width: number): SizeClass => (width >= RegularWidth
  * Where the navigation sits at a width.
  *
  * - `bar`: the bottom tab bar. Every compact width.
- * - `rail`: the side navigation, forced to its icon-only collapsed form (`SidebarCollapsedWidth`).
+ * - `rail`: the side navigation as an icon-only column (`SidebarRailWidth`).
  *   Regular width that is still narrower than `SidebarBreakpoint`: a Duo or Fold inner display, an
  *   iPad in portrait. The screen is wide but SHORT there (a Fold's inner panel is 616dp tall), so a
  *   bottom bar costs a row of covers while a 64dp rail costs a sliver of width the grid barely
  *   notices — and it is the "tab bar becomes a sidebar on the inner display" layout Apple describes.
- *   Collapsed by force rather than by preference because a labelled sidebar would eat into content
- *   that hasn't reached its max width (see `SidebarBreakpoint`).
- * - `sidebar`: the labelled, resizable sidebar, collapsible at the user's choice.
+ *   Icons only because a labelled sidebar would eat into content that hasn't reached its max width
+ *   (see `SidebarBreakpoint`).
+ * - `sidebar`: the labelled, resizable sidebar, a panel floating in from the window's edge.
  *
  * `web` is a parameter rather than a `Platform` read so this stays pure. Web keeps the bottom bar
  * between 768 and `SidebarBreakpoint` for now: a browser window that narrow is a resized desktop
  * window, not a device, and the web-only layouts that ride on the sidebar (series as a pane, settings
- * as a modal, search in the rail) were designed for the labelled rail's width. Lift that gate here
+ * as a modal, the shell's search field) were designed for the labelled sidebar's width. Lift that gate here
  * when they are ready for it, nowhere else.
  */
 export type NavMode = 'bar' | 'rail' | 'sidebar';

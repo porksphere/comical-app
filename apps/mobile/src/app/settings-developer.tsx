@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import type { SettingsFormSection } from '@/components/settings/settings-form';
+import { select, type SettingsFormSection } from '@/components/settings/settings-form';
 import { SettingsList } from '@/components/settings/settings-list';
 import { ThemedView } from '@/components/themed-view';
 import { TopBar } from '@/components/top-bar';
@@ -9,11 +9,40 @@ import { useMockDataToggle } from '@/data/source';
 import { setBookCoverShuffle, useBookCoverShuffle } from '@/hooks/use-book-covers';
 import {
   setHomeBookshelfStats,
+  setHomeHeroStyle,
   setSeriesStickerRead,
   useHomeBookshelfStats,
+  useHomeHeroStyle,
   useSeriesStickerRead,
+  type HomeHeroStyle,
 } from '@/hooks/use-home-bookshelf';
+import {
+  setSearchBarTrial,
+  setSearchTitleTrial,
+  useSearchBarTrial,
+  useSearchTitleTrial,
+  type SearchBarTrial,
+  type SearchTitleTrial,
+} from '@/hooks/use-search-bar-trial';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
+
+const HERO_STYLES = [
+  { value: 'shelf', label: '3D bookshelf' },
+  { value: 'splash', label: 'Cover splash' },
+  { value: 'poster', label: 'Poster' },
+] as const;
+
+const SEARCH_BARS = [
+  { value: 'auto', label: 'Automatic' },
+  { value: 'hides', label: 'Hides' },
+  { value: 'titled', label: 'Stays, titled' },
+  { value: 'kept', label: 'Stays, buttons only' },
+] as const;
+
+const SEARCH_TITLES = [
+  { value: 'inline', label: 'In the bar' },
+  { value: 'always', label: 'Under the bar' },
+] as const;
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
  *  shows which server real requests target. The Settings screen only links here when
@@ -26,6 +55,9 @@ export default function DeveloperSettingsScreen() {
   const shuffleCovers = useBookCoverShuffle();
   const shelfStats = useHomeBookshelfStats();
   const stickerRead = useSeriesStickerRead();
+  const heroStyle = useHomeHeroStyle();
+  const searchBar = useSearchBarTrial();
+  const searchTitle = useSearchTitleTrial();
 
   const sections: SettingsFormSection[] = [
     {
@@ -53,6 +85,33 @@ export default function DeveloperSettingsScreen() {
           value: shuffleCovers,
           onChange: setBookCoverShuffle,
         },
+        select<HomeHeroStyle>({
+          label: 'Home opens on',
+          description:
+            'A trial. What Comical Home shows of what you are reading, where Settings → General has the bookshelf on: the 3D shelf, the front series’ cover across the top of the page, or its cover whole over its own colours.',
+          value: heroStyle,
+          options: HERO_STYLES,
+          onChange: setHomeHeroStyle,
+          testID: 'settings.developer.home-hero',
+        }),
+        select<SearchBarTrial>({
+          label: 'Search tab bar while searching',
+          description:
+            'A trial, iOS only. What the Search tab’s bar does while its field is in use: goes where its buttons stand in a side column and stays, titled, where it runs along the top; goes everywhere, as the App Store’s does; stays with a small “Search” in it; or stays with only its buttons.',
+          value: searchBar,
+          options: SEARCH_BARS,
+          onChange: setSearchBarTrial,
+          testID: 'settings.developer.search-bar',
+        }),
+        select<SearchTitleTrial>({
+          label: 'Search tab title',
+          description:
+            'A trial, iOS only. Where the Search tab’s large title stands: on the bar’s own row beside its buttons, as every other tab’s does, or on a row of its own under them that shrinks into the bar as you scroll.',
+          value: searchTitle,
+          options: SEARCH_TITLES,
+          onChange: setSearchTitleTrial,
+          testID: 'settings.developer.search-title',
+        }),
         {
           kind: 'toggle',
           label: 'Bookshelf frame stats',

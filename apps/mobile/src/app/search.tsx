@@ -2,7 +2,7 @@ import type { LegendListRef } from '@legendapp/list/react-native';
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Stack, useFocusEffect, useNavigation } from 'expo-router';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import type { LegacyComposedGesture as ComposedGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import type { SearchBarCommands } from 'react-native-screens';
 import { FilterBar, SortControl } from '@/components/filters/filter-demo';
 import { resolveMetaIntent, resolveTagIntent, type MetaIntent, type TagIntent } from '@/components/filters/filter-intents';
 import { filterValueToApi } from '@/components/filters/filter-types';
+import { SHELL_SEARCH_RESERVE } from '@/components/glass-surface';
 import { ContentFeed } from '@/components/content-feed';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ChevronLeftIcon } from '@/components/icons/chevron-left';
@@ -20,6 +21,10 @@ import { PullIndicator } from '@/components/pull-indicator';
 import { SeriesGrid } from '@/components/series-grid';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
+import { NativeTabHeader } from '@/components/native-tab-header';
+import { NavBarLeadingMenu, navBarLeadingMenuItem, useMenuLeads } from '@/components/nav-bar-leading-menu';
+import { useSearchSourceMenu } from '@/components/search-source-menu';
+import { SearchSources } from '@/components/search-sources';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BarContentGap, MaxTopLevelWidth, Spacing, topLevelCenterInset } from '@/constants/theme';
@@ -45,6 +50,7 @@ import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useOpenLink } from '@/hooks/use-open-link';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
+import { useSearchBarTrial, useSearchTitleTrial } from '@/hooks/use-search-bar-trial';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -59,11 +65,20 @@ import { useWindowControlsClearance } from '@/lib/window-controls';
 const DISABLED_RESULTS_KEY = ['browseGrid', 'disabled', 'search'] as const;
 // Stable empty array so `useCrossBridgeRails` runs zero queries in single-bridge mode.
 const NO_BRIDGES: Bridge[] = [];
-const LIBRARY_ROWS = 2;
+/** Library rows above the sources: two on a wide screen, one on a phone, where two were the whole
+ *  first screen and a search of the sources opened on results you already had. */
+const libraryRows = (desktop: boolean) => (desktop ? 2 : 1);
+/** The library answers almost as you type: one local lookup. */
+const LIBRARY_DELAY_MS = 150;
+/** The sources wait for typing to pause, far longer than the library: each pause is a request to
+ *  every source you have. Submitting doesn't wait. */
+const SOURCES_DELAY_MS = 1000;
+/** Nor is one letter worth asking every source about until it's submitted. */
+const SOURCES_MIN_CHARS = 2;
 /** ChevronLeftIcon's width: what the field leaves clear for the edge chevron. */
 const BackSlotWidth = 26;
-const SUBMIT_HINT =
-  Platform.OS === 'web' ? 'Press Enter to search every bridge' : 'Tap search to look across every bridge';
+/** Beside the desktop's shell field, where the sources wait for Enter. */
+const SUBMIT_HINT = 'Press Enter to search every bridge';
 
 /**
  * The dedicated Search screen, pushed over the tabs. Its top bar holds the search
@@ -101,11 +116,21 @@ export type SearchEmbedded = {
   scrollEnabled?: boolean;
 };
 
-/** The rail's search on desktop (see lib/sidebar-search). The field is in the rail, so this shows only
+/** The shell's search on desktop (see lib/sidebar-search). The field is the shell's, so this shows only
  *  the results: always across every bridge, and deaf to search intents, which belong to the screen. */
 export type SearchDocked = { query: string; typed: string; onClose: () => void };
 
-export default function SearchScreen({ embedded, docked }: { embedded?: SearchEmbedded; docked?: SearchDocked } = {}) {
+/**
+ * `tab`: iOS's search tab (`app-tabs.ios`), the screen as the root of a tab rather than a page
+ * pushed over one. It starts on every bridge and has nothing to go back to, so the system field
+ * sits in the tab bar and its cancel clears it, and a menu in the bar chooses what to search: every
+ * bridge, or one source with its filters.
+ */
+export default function SearchScreen({
+  embedded,
+  docked,
+  tab = false,
+}: { embedded?: SearchEmbedded; docked?: SearchDocked; tab?: boolean } = {}) {
   const ds = useDataSource();
   const mock = useMockActive();
   const theme = useTheme();
@@ -128,7 +153,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // Take the one-shot Series→Search intent exactly once (lazy initializer), before the first render
   // reads it. `query` seeds directly from a `query` intent; `tag`/`meta` are stashed and applied
   // once this bridge's filter defs settle (below), mirroring the old Browse focus-effect flow.
-  const [initialIntent] = useState(() => (docked ? null : peekSearchIntent()));
+  const [initialIntent] = useState(() => (docked || tab ? null : peekSearchIntent()));
   // Consume it AFTER mount: a consuming read in the initializer loses the intent under
   // StrictMode's double invocation (see peekSearchIntent).
   useEffect(() => {
@@ -145,8 +170,9 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
     bridgesLoaded,
     bridges,
     visibleBridges,
+    bridgeThumbnails,
     refetchBridges,
-  } = useInheritedBridge(docked ? COMICAL_BRIDGE_ID : undefined);
+  } = useInheritedBridge(docked || tab ? COMICAL_BRIDGE_ID : undefined);
 
   // Cross-bridge mode: when the synthetic "Comical" bridge is selected, search fans out over every
   // real bridge and shows one rail of results per bridge (no filters/sort — Comical has no capabilities,
@@ -168,20 +194,11 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   }, []);
 
   const [ownQuery, setQuery] = useState(initialIntent?.kind === 'query' ? initialIntent.query : '');
+  // What was submitted, or set under the field (an intent, the clear button): what the field is told.
   const query = docked ? docked.query : ownQuery;
 
-  // The cross-bridge search rows (one rail per bridge). Runs zero queries in single-bridge mode.
-  const comicalSearch = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'search', query });
-
-  // What is in the field right now, ahead of `query`, which only moves on submit. The library answers
-  // from it as you type — it is one local lookup, where a bridge search is a request to every source
-  // you have, so those wait for Enter. Reset whenever the committed query moves on its own (an intent,
-  // the clear button), which the field itself does in the same render.
-  //
-  // DESKTOP ONLY. The composite result — your own shelf above every source's — earns its place on a
-  // wide screen, where two rows of library cards sit above the rails with room to spare. On a phone
-  // those two rows are the whole first screen, so a search of the sources opened on a result you
-  // already had, and the Library tab is one tap away with its own filter.
+  // What is in the field right now, ahead of `query`, which only moves on submit. Reset whenever the
+  // committed query moves on its own, which the field itself does in the same render.
   const [ownTyped, setTyped] = useState(query);
   const [prevQuery, setPrevQuery] = useState(query);
   if (prevQuery !== query) {
@@ -189,12 +206,26 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
     setTyped(query);
   }
   const typed = docked ? docked.typed : ownTyped;
+  // What the sources are asked: the field once typing pauses (`SOURCES_DELAY_MS`), or at once when it
+  // is submitted. Never written back into the field, which would eat a space typed mid-word. Beside
+  // the desktop's shell field the sources wait for Enter, since typing there narrows the tab under it.
+  const typedTerm = typed.trim();
+  const pausedTerm = useDebouncedValue(docked ? '' : typedTerm, SOURCES_DELAY_MS);
+  const searched =
+    docked || typedTerm === query.trim()
+      ? query
+      : typedTerm.length < SOURCES_MIN_CHARS || pausedTerm.length < SOURCES_MIN_CHARS
+        ? ''
+        : pausedTerm;
+
+  // The cross-bridge search rows (one rail per bridge). Runs zero queries in single-bridge mode.
+  const comicalSearch = useCrossBridgeRails(isComical ? realBridges : NO_BRIDGES, { mode: 'search', query: searched });
   const desktop = useIsDesktop();
   // Desktop: the field starts where the filters do once the capped row's gutter can hold the edge
   // chevron, and is pushed only as far as it can't.
   const contentWidth = useContentWidth();
   const fieldIndent = Math.max(0, BackSlotWidth + Spacing.two - topLevelCenterInset(contentWidth));
-  const libraryTerm = useDebouncedValue(desktop ? typed.trim() : '', 150);
+  const libraryTerm = useDebouncedValue(typedTerm, LIBRARY_DELAY_MS);
   const libraryMatches = useQuery({
     ...libraryQuery(ds, mock, libraryTerm, 'lastRead', null),
     enabled: isComical && !!libraryTerm,
@@ -307,7 +338,8 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   useEffect(() => {
     if (nativeBar) searchBarRef.current?.setText(query);
   }, [nativeBar, query]);
-  const autoFocus = !initialIntent || initialIntent.kind === 'open';
+  // The search tab's field is activated by the system as the tab is chosen.
+  const autoFocus = !tab && (!initialIntent || initialIntent.kind === 'open');
   useEffect(() => {
     if (!nativeBar || !autoFocus) return;
     let done = false;
@@ -330,7 +362,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   useEffect(
     () =>
       subscribeSearchIntent(() => {
-        if (isDocked || !focusedRef.current || !topRef.current || !isPaneTabLive(paneTab)) return;
+        if (isDocked || tab || !focusedRef.current || !topRef.current || !isPaneTabLive(paneTab)) return;
         if (!isEmbedded && isSeriesPaneOpen(paneTab ?? undefined)) return;
         // The desktop's Search entry opens the app's Search screen. A layer in the series pane is
         // still mounted while the pane closes, and would otherwise take it from the screen it pushes.
@@ -351,7 +383,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
           intent.kind === 'meta' ? { bridgeId: intent.bridgeId, metaKey: intent.metaKey, value: intent.value } : null,
         );
       }),
-    [setBridge, setFilterValues, isEmbedded, isDocked, paneTab],
+    [setBridge, setFilterValues, isEmbedded, isDocked, tab, paneTab],
   );
 
   useEffect(() => {
@@ -406,6 +438,13 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // with its field. Everything below it positions from here: the filter bar's clip window, the
   // grid's top padding, the pull spinner.
   const topBarTotal = nativeBar ? topChrome : insets.top + barHeight;
+  // The search tab's large title collapses into its bar on scroll, which follows the finger only
+  // over a list the system insets by the bars itself (`systemInsets`); padded for the bar by hand,
+  // as every other screen's list is, the title snapped between its sizes and the list jumped with
+  // the bar's height. So there the padding is only what sits inside the bars.
+  const systemInsets = tab && nativeBar;
+  const listTop = (systemInsets ? 0 : topBarTotal) + filtersBarH + BarContentGap;
+  const listBottom = (systemInsets ? 0 : insets.bottom) + Spacing.five;
 
   // The filters sheet reads this screen's filters through data/filter-sheet.ts (it cannot reach
   // them any other way — see there). Republished on every change while this screen owns the
@@ -437,10 +476,10 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   const scope = useMemo<BrowseScope | null>(() => {
     if (!bridgeId) return null;
     // A RESTORED per-bridge sort orders a search but never starts one — see committedSortExplicit.
-    const active = !!query || (committedFilters?.length ?? 0) > 0 || committedSortExplicit;
+    const active = !!searched || (committedFilters?.length ?? 0) > 0 || committedSortExplicit;
     if (!active) return null;
-    return { kind: 'search', query, opts: { filters: committedFilters, sort: committedSort } };
-  }, [bridgeId, query, committedFilters, committedSort, committedSortExplicit]);
+    return { kind: 'search', query: searched, opts: { filters: committedFilters, sort: committedSort } };
+  }, [bridgeId, searched, committedFilters, committedSort, committedSortExplicit]);
 
   const resultsQuery = useInfiniteQuery({
     queryKey: scope ? queryKeys.browseGrid(mock, bridgeId ?? '', scope) : DISABLED_RESULTS_KEY,
@@ -475,19 +514,18 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
 
   // Grid rows rather than a rail: a rail belongs to one bridge, and a library spans all of them.
   const comicalRows = useMemo<ContentRow[]>(() => {
-    const cards = visibleLibrary.slice(0, numColumns * LIBRARY_ROWS).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
+    const cards = visibleLibrary.slice(0, numColumns * libraryRows(desktop)).map((e) => toLibraryCard(e, bridgeById.get(e.bridgeId)));
     if (cards.length === 0) return comicalSearch.rows;
     const rows: ContentRow[] = [{ type: 'sectionHead', key: 'head:library', title: 'In your library' }];
     for (let i = 0; i < cards.length; i += numColumns) {
       rows.push({ type: 'gridRow', key: `library:${i}`, items: cards.slice(i, i + numColumns) });
     }
     return [...rows, ...comicalSearch.rows];
-  }, [visibleLibrary, numColumns, bridgeById, comicalSearch.rows]);
-  const typedTerm = typed.trim();
+  }, [visibleLibrary, numColumns, desktop, bridgeById, comicalSearch.rows]);
 
   // Identifies the current search. SeriesGrid folds it into the list key and the cards' recycle
   // cohort, so a new search resets recycled card state rather than flashing the previous result's cover.
-  const scopeKey = scope ? `${bridgeId}|${query}|${committedSort?.key ?? ''}|${JSON.stringify(committedFilters ?? {})}` : 'blank';
+  const scopeKey = scope ? `${bridgeId}|${searched}|${committedSort?.key ?? ''}|${JSON.stringify(committedFilters ?? {})}` : 'blank';
 
   // ── Sliding filter bar ─────────────────────────────────────────────────────
   // The filter bar sits just below the (fixed) search bar and closes as the results scroll down,
@@ -547,6 +585,9 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   const pull = usePullToRefresh(scrollY, () =>
     isComical ? comicalSearch.refetch() : scope ? resultsQuery.refetch() : Promise.resolve(),
   );
+  // Not over the search tab's system-inset list: its top rests at minus the bars' height, which the
+  // pull reads as a pull held for good, the spinner never leaving and the list pinned under it.
+  const refreshable = !systemInsets;
 
   const loadMore = () => {
     if (!scope || !resultsQuery.hasNextPage || resultsQuery.isFetchingNextPage) return;
@@ -571,23 +612,74 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   // scroll, with the system's search dimming off, since the results under the field are the thing
   // being typed at. The route has no title: the field IS the bar's middle, on the chevron's row,
   // and a "Search" over it only said what the field already shows.
+  // The search tab is Apple's standard search tab, the App Store's and TV's: a landing page (the
+  // sources) under the large title, with the field stacked under it at the top and the keyboard
+  // only on a tap (the trigger's `disableAutomaticSearchActivation`, which also keeps the tab in
+  // the bar with the others on iOS 27). Its large title is the tabs' `inline` one, on the bar's own
+  // row beside the items, as the App Store's is; the standard one, on a row of its own under the
+  // items, stood under the bar where no other tab's does, and stays as a trial (Settings →
+  // Developer). The scope menu leads the items.
+  const sources = visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID);
+  const sourceMenu = useSearchSourceMenu({
+    enabled: tab && nativeBar,
+    sources,
+    thumbnails: bridgeThumbnails,
+    bridgeId,
+    onSelect: setBridge,
+  });
+  const clear = () => {
+    setTyped('');
+    setQuery('');
+  };
+  // Whether the field is in use: from its first focus to its ✕, the system's own active search,
+  // which outlasts the keyboard. While it is, the bar goes where its items stand in a side column,
+  // which stays when the bar goes, and stays, titled, where it runs along the top: gone, it took
+  // the source, filters and sort with it, and no scroll brings it back during a search. The other
+  // ways are trials (Settings → Developer). Where the bar runs is read once, as the search begins,
+  // and held to its end, so a turn of the phone mid-search doesn't hide or bring back the bar under
+  // the field being typed into.
+  const barTrial = useSearchBarTrial();
+  const titleTrial = useSearchTitleTrial();
+  const menuLeads = useMenuLeads();
+  const [searching, setSearching] = useState(false);
+  const [searchAlongTop, setSearchAlongTop] = useState<boolean | null>(null);
+  const barAlongTop = searchAlongTop ?? menuLeads;
+  const barHides = tab && (barTrial === 'hides' || (barTrial === 'auto' && !barAlongTop));
+  const barTitled = barTrial === 'titled' || (barTrial === 'auto' && barAlongTop);
   const nativeItems = nativeBar ? (
     <>
-      <Stack.Screen options={{ title: '' }} />
+      {tab ? (
+        <NativeTabHeader title="Search" largeTitle={titleTrial} barTitle={barTitled && searching} />
+      ) : (
+        <Stack.Screen options={{ title: '' }} />
+      )}
       <Stack.SearchBar
         ref={searchBarRef}
-        placeholder="Search…"
-        placement="integratedCentered"
+        placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
+        placement={tab ? 'stacked' : 'integratedCentered'}
         hideWhenScrolling={false}
-        hideNavigationBar={false}
+        // The system's default on the tab. Held through a search elsewhere, since a pushed search's
+        // bar holds its back button.
+        hideNavigationBar={barHides}
         obscureBackground={false}
         autoCapitalize="none"
         onChangeText={(e) => setTyped(e.nativeEvent.text)}
         onSearchButtonPress={(e) => submit(e.nativeEvent.text)}
-        onCancelButtonPress={goBack}
+        onFocus={() => {
+          if (searching) return;
+          setSearching(true);
+          setSearchAlongTop(menuLeads);
+        }}
+        onCancelButtonPress={() => {
+          setSearching(false);
+          setSearchAlongTop(null);
+          if (tab) clear();
+          else goBack();
+        }}
       />
-      {(hasFilters || sortOptions.length > 0) && (
+      {(tab || hasFilters || sortOptions.length > 0) && (
         <Stack.Toolbar placement="right">
+          {tab && navBarLeadingMenuItem(sourceMenu)}
           {hasFilters && (
             <Stack.Toolbar.Button
               icon={activeFilterCount > 0 ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
@@ -611,6 +703,7 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
           )}
         </Stack.Toolbar>
       )}
+      {tab && <NavBarLeadingMenu {...sourceMenu} />}
     </>
   ) : null;
 
@@ -671,13 +764,15 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
   ) : null;
 
   const comicalHint =
-    typedTerm && typedTerm !== query ? (
+    tab && !typedTerm ? (
+      <SearchSources bridges={sources} onSelect={setBridge} />
+    ) : docked && typedTerm && typedTerm !== query ? (
       <View style={styles.submitHint}>
         <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
           {SUBMIT_HINT}
         </ThemedText>
       </View>
-    ) : query.trim() && comicalRows.length === 0 && !comicalSearch.anyLoading ? (
+    ) : searched.trim() && comicalRows.length === 0 && !comicalSearch.anyLoading ? (
       <View style={styles.hint}>
         <ThemedText type="small" themeColor="textSecondary" style={styles.hintText}>
           No results
@@ -694,7 +789,14 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
           Opaque, like every other bar (BarSurface): the results scroll behind it. */}
       {!nativeBar && (
       <BarSurface style={[styles.topBar, topBarRuleStyle]}>
-        <View style={[styles.topBarRow, { height: barHeight }, clearance > 0 && { paddingRight: Spacing.three + clearance }]}>
+        <View
+          style={[
+            styles.topBarRow,
+            { height: barHeight },
+            clearance > 0 && { paddingRight: Spacing.three + clearance },
+            // The field these results answer stands over this row's end (`ShellSearchField`).
+            docked && { paddingRight: Spacing.three + clearance + SHELL_SEARCH_RESERVE },
+          ]}>
           {docked ? (
             <>
               <ThemedText testID="search.pane-title" numberOfLines={1} style={styles.paneTitle}>
@@ -763,18 +865,20 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
               // a rail's "See all" (ContentFeed → /results) is where you infinite-scroll one bridge.
               <ContentFeed
                 rows={comicalRows}
-                scopeKey={query || 'blank'}
+                scopeKey={searched || 'blank'}
                 listRef={listRef}
                 header={comicalHint}
-                paddingTop={topBarTotal + filtersBarH + BarContentGap}
-                paddingBottom={insets.bottom + Spacing.five}
+                paddingTop={listTop}
+                paddingBottom={listBottom}
                 sharedValues={sharedValues}
                 scrollRef={scrollRef}
                 onScroll={onListScroll}
-                onScrollEndDrag={pull.onScrollEndDrag}
-                wrapperStyle={pull.listStyle}
+                onScrollEndDrag={refreshable ? pull.onScrollEndDrag : undefined}
+                wrapperStyle={refreshable ? pull.listStyle : undefined}
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
+                keyboardInsets
+                systemInsets={systemInsets}
               />
             ) : (
               <SeriesGrid
@@ -784,8 +888,8 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
                 header={emptyBody}
                 // The top bar OVERLAYS the list (results scroll behind it), so reserve it as well
                 // as the filter bar beneath it, plus a little breathing room.
-                paddingTop={topBarTotal + filtersBarH + BarContentGap}
-                paddingBottom={insets.bottom + Spacing.five}
+                paddingTop={listTop}
+                paddingBottom={listBottom}
                 bridge={currentBridge?.name ?? undefined}
                 bridgeId={bridgeId}
                 direct={directBridge}
@@ -793,16 +897,18 @@ export default function SearchScreen({ embedded, docked }: { embedded?: SearchEm
                 scrollRef={scrollRef}
                 onScroll={onListScroll}
                 onEndReached={loadMore}
-                onScrollEndDrag={pull.onScrollEndDrag}
+                onScrollEndDrag={refreshable ? pull.onScrollEndDrag : undefined}
                 // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
-                wrapperStyle={[pull.listStyle, listDimStyle]}
+                wrapperStyle={[refreshable ? pull.listStyle : null, listDimStyle]}
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
+                keyboardInsets
+                systemInsets={systemInsets}
               />
             ))}
           {ready && filterBar}
           {/* Settles just below the bars, in the gap the pull opens. */}
-          <PullIndicator {...pull.indicator} top={topBarTotal + filtersBarH} />
+          {refreshable && <PullIndicator {...pull.indicator} top={topBarTotal + filtersBarH} />}
         </View>
       )}
     </ThemedView>

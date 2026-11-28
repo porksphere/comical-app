@@ -1,26 +1,30 @@
 /**
- * The rail's search field and the results pane it opens over the content region.
+ * The desktop's search field and the results pane it opens over the content region.
  *
- * WEB ONLY, at the widths that show an expanded rail. Search there is a field you stay beside rather
- * than a screen you go to: the results cover the grid the way an open series does, and the rail —
- * the field included — stays lit beside them, so refining a search never means finding your way back
- * to it. Collapsed, there is no room for a field, so the rail's icon expands the rail to reach it.
+ * WEB ONLY, at the widths that show the sidebar. Search there is a field you stay beside rather
+ * than a screen you go to: it stands at the end of every tab's bar (`ShellSearchField`), the results
+ * cover the grid the way an open series does, and the field stays over them, so refining a search
+ * never means finding your way back to it.
  *
  * `typed` is the field as it stands, `query` what was last submitted: the library answers from the
  * first as you type, every bridge from the second on Enter (see app/search). The pane is open while
  * either holds something, so emptying the field is how it closes.
+ *
+ * On Library and Recent what is typed NARROWS THE TAB IN PLACE instead (`useTabFilter`
+ * reads it as the tab's filter), since the rows that answer it are already on screen, and the pane
+ * waits for Enter. It is one field doing both: a filter field of the tab's own beside this one was
+ * two search bars on one screen.
  */
 import { observable } from '@legendapp/state';
-import { use$ } from '@legendapp/state/react';
+import { use$, useSelector } from '@legendapp/state/react';
 
-import { activePaneTab, usePaneTab } from '@/lib/pane-tab';
+import { activePaneTab, paneKeyTab, usePaneTab } from '@/lib/pane-tab';
 
 type Search = { typed: string; query: string };
 
 const NO_SEARCH: Search = { typed: '', query: '' };
 
-// A pending flag rather than a counter: the field may not exist when focus is asked for (the rail is
-// collapsed, and expands to answer), and a counter would refocus it on every later remount too.
+// A pending flag rather than a counter: a counter would refocus the field on every later remount too.
 // `searches` has one entry per tab (see `lib/pane-tab`), so the field shows the search of the tab
 // you are on, and each tab's results pane lists its own.
 type SidebarSearchState = { searches: Record<string, Search>; focusPending: boolean };
@@ -45,7 +49,12 @@ function useTabSearch(tab: string): Search {
 }
 
 function useTabSearchOpen(tab: string): boolean {
-  return use$(() => isOpen(sidebarSearch$.searches[tab].get()));
+  return use$(() => isOpen(sidebarSearch$.searches[tab].get(), tab));
+}
+
+/** What is typed for `key`, read by a tab that narrows itself by it. */
+export function useSidebarSearchTyped(key: string): string {
+  return useSelector(() => sidebarSearch$.searches[key].get()?.typed ?? '');
 }
 
 function useFocusPending(): boolean {
@@ -53,11 +62,14 @@ function useFocusPending(): boolean {
 }
 
 export function isSidebarSearchOpen(tab = activePaneTab()): boolean {
-  return isOpen(sidebarSearch$.searches[tab].peek());
+  return isOpen(sidebarSearch$.searches[tab].peek(), tab);
 }
 
-function isOpen(search: Search | undefined): boolean {
-  return !!search && (!!search.typed.trim() || !!search.query);
+const NARROWED_IN_PLACE = new Set(['library', 'recent']);
+
+function isOpen(search: Search | undefined, key: string): boolean {
+  if (!search) return false;
+  return !!search.query || (!NARROWED_IN_PLACE.has(paneKeyTab(key)) && !!search.typed.trim());
 }
 
 export function setSidebarSearchTyped(typed: string): void {
@@ -73,7 +85,7 @@ export function closeSidebarSearch(tab = activePaneTab()): void {
   sidebarSearch$.searches[tab].set({ typed: '', query: '' });
 }
 
-/** Every tab's — for when the field itself goes away (a collapsed rail has none). */
+/** Every tab's — for when the field itself goes away (a window too narrow for the sidebar). */
 export function clearSidebarSearches(): void {
   sidebarSearch$.searches.set({});
 }
@@ -97,5 +109,5 @@ export function useSidebarSearchKeys(): string[] {
 }
 
 function openKeys(searches: Record<string, Search>): string[] {
-  return Object.keys(searches).filter((key) => isOpen(searches[key]));
+  return Object.keys(searches).filter((key) => isOpen(searches[key], key));
 }

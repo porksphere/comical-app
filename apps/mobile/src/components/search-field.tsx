@@ -185,6 +185,8 @@ const styles = StyleSheet.create({
   searchInput: {
     ...rowInput(16),
     flex: 1,
+    // Without it the web's input keeps its intrinsic width and squeezes the icon beside it to nothing.
+    minWidth: 0,
     padding: 0,
   },
 });

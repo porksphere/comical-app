@@ -25,6 +25,7 @@ export function SeriesCardMenu({
   entry,
   direct,
   coverAspect,
+  rowActions,
   onOpen,
   children,
 }: SeriesCardMenuProps) {
@@ -36,7 +37,8 @@ export function SeriesCardMenu({
       bridgeId={bridgeId}
       entry={entry}
       {...(bridge !== undefined && { bridge })}
-      {...(direct !== undefined && { direct })}>
+      {...(direct !== undefined && { direct })}
+      {...(rowActions !== undefined && { rowActions })}>
       {render}
     </SeriesCardSystemMenuRows>
   );

@@ -24,6 +24,16 @@ export const Colors = {
      *  disappears into whichever of them it happens to equal. */
     tileWash: 'rgba(0,0,0,0.06)',
     /**
+     * The desktop chrome's glass: the floating sidebar (`glassPanel`), the bar's capsules
+     * (`glassFill`), their edge, and a row's hover and selection on either. Washes, because what
+     * is behind them shows through a blur and an opaque step would hide it.
+     */
+    glassPanel: 'rgba(246,246,248,0.66)',
+    glassFill: 'rgba(255,255,255,0.62)',
+    glassEdge: 'rgba(0,0,0,0.1)',
+    glassHover: 'rgba(0,0,0,0.05)',
+    glassSelected: 'rgba(0,0,0,0.09)',
+    /**
      * The RAISED surface ladder — an overlay's panel and the rows on it.
      *
      * Separate from `backgroundPanel` because a floating surface has a different job from an inset
@@ -101,6 +111,11 @@ export const Colors = {
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
     tileWash: 'rgba(255,255,255,0.12)',
+    glassPanel: 'rgba(28,28,30,0.5)',
+    glassFill: 'rgba(60,60,66,0.45)',
+    glassEdge: 'rgba(255,255,255,0.14)',
+    glassHover: 'rgba(255,255,255,0.08)',
+    glassSelected: 'rgba(255,255,255,0.16)',
     // The raised ladder — see `light.overlaySurface` for what these are and where they come from.
     // #2C2C2D is iOS's own raised card and #404042 its divider; the two steps between them are the
     // row's hover and selection, which an iOS settings list has no need for and a menu does.

@@ -30,11 +30,30 @@ import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
  * press and its end to the same ramped hold the custom bars' marks run, and swells the title's
  * label with each of the ramp's beats, as the marks' pulse does.
  *
- * The search bar is the integrated-button placement: a magnifier among the trailing items that
+ * A tab's filter is the integrated-button placement: a magnifier among the trailing items that
  * expands into the field on tap (iOS 26; an inline field under the title before that). Cancel
- * clears the query, which is what closing the custom field does too.
+ * clears the query, which is what closing the custom field does too. The `stacked` field under
+ * the title, the pull-down filter, was tried and dropped: it hangs off the standard large title's
+ * own row, and under the `inline` title the bar lost its title and the list jumped as it came
+ * and went.
  */
-export function NativeTabHeader({ title, filter, placeholder }: { title: string; filter?: TabFilter; placeholder?: string }) {
+export function NativeTabHeader({
+  title,
+  filter,
+  placeholder,
+  largeTitle = 'inline',
+  barTitle,
+}: {
+  title: string;
+  filter?: TabFilter;
+  placeholder?: string;
+  /** `always`, a row of its own under the items that collapses on scroll: the search tab's trial. */
+  largeTitle?: 'inline' | 'always';
+  /** Set for the search tab, whose large title is then set apart from the bar's small one, shown
+   *  only while this is true: the large title scrolls with the page, and with the bar kept through
+   *  a search the small title stood in the bar over it; nor is it wanted beside a side column. */
+  barTitle?: boolean;
+}) {
   // The tab's name in the title typeface (lib/title-font), once it has loaded.
   const titleFont = useTitleFont();
   return (
@@ -56,7 +75,15 @@ export function NativeTabHeader({ title, filter, placeholder }: { title: string;
           onCancelButtonPress={filter.close}
         />
       ) : null}
-      {NavBarLargeTitle ? <NavBarLargeTitle mode="inline" style={styles.pin} pointerEvents="none" /> : null}
+      {NavBarLargeTitle ? (
+        <NavBarLargeTitle
+          mode={largeTitle}
+          largeTitle={barTitle === undefined ? undefined : title}
+          barTitle={barTitle ? title : ''}
+          style={styles.pin}
+          pointerEvents="none"
+        />
+      ) : null}
       {NavBarHold ? <TitleHold /> : null}
       <VerticalBarEdgeReporter />
     </>

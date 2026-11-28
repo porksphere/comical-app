@@ -69,8 +69,8 @@ const SCROLLBAR_CSS = `
  *  lights, which already sit inside the window. */
 const CAPTION_OVERLAY = process.platform !== "darwin";
 
-/** The app's top bars are the window's handle now. They carry a `data-app-region` marker and this is
- *  what makes it mean something; a browser never sees it. A control inside a bar is cut back out —
+/** The app's top bars, and the head of its sidebar, are the window's handle now. They carry a
+ *  `data-app-region` marker and this is what makes it mean something; a browser never sees it. A control inside a bar is cut back out —
  *  `app-region` is the OS's hit test, decided before the page sees the click. A bar faded out of
  *  use (`data-window-drag="off"`) stops being one, and while a menu or dialog is up nothing is,
  *  since those are drawn over the bars and a handle under them would swallow their clicks. */
@@ -83,6 +83,11 @@ const DRAG_REGION_CSS = `
   ) { app-region: no-drag; }
   body:has([data-window-layer]) [data-app-region="drag"] { app-region: no-drag; }
 `;
+
+/** macOS: the traffic lights stand in the top row of the app's floating sidebar, on its centre line
+ *  and at its leading inset (`TOP_ROW_HEIGHT` and the panel's insets in the app's `app-sidebar.tsx`,
+ *  which leaves them `TRAFFIC_LIGHTS_WIDTH` of room). */
+const TRAFFIC_LIGHTS = { x: 24, y: 25 };
 
 /** The caption buttons are as tall as the bar they sit in — `useTopBarHeight` in the app: the
  *  desktop bar from 768px of window width (`LARGE_SCREEN_BREAKPOINT`), the compact one below — less
@@ -345,7 +350,9 @@ async function openWindow(): Promise<void> {
     // nothing else to go on. macOS ignores it.
     icon: shellIcon(),
     titleBarStyle: CAPTION_OVERLAY ? "hidden" : "hiddenInset",
-    ...(CAPTION_OVERLAY ? { titleBarOverlay: { ...captionColors("#000000"), height: 63 } } : {}),
+    ...(CAPTION_OVERLAY
+      ? { titleBarOverlay: { ...captionColors("#000000"), height: 63 } }
+      : { trafficLightPosition: TRAFFIC_LIGHTS }),
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -392,7 +399,7 @@ async function openWindow(): Promise<void> {
   // Every load (a reload included) starts without it, and `insertCSS` lasts only until the next one.
   win.webContents.on("dom-ready", () => {
     void win.webContents.insertCSS(SCROLLBAR_CSS);
-    if (CAPTION_OVERLAY) void win.webContents.insertCSS(DRAG_REGION_CSS);
+    void win.webContents.insertCSS(DRAG_REGION_CSS);
   });
 
   if (CAPTION_OVERLAY) {

@@ -1,3 +1,4 @@
+import { LinearGradient } from 'expo-linear-gradient';
 import type { ReactNode } from 'react';
 import { StyleSheet, type ViewProps } from 'react-native';
 import Animated, { type AnimatedProps } from 'react-native-reanimated';
@@ -20,17 +21,23 @@ import { windowDragRegion } from '@/lib/window-controls';
  * These bars were frosted until recently: a real blur (iOS `UIVisualEffectView` / web
  * `backdrop-filter`) under a partial scrim of the bar's own colour, with a solid fallback on Android,
  * so content scrolled under them and showed through. That's gone, deliberately — the bars are now
- * plainly opaque, and content that passes behind one is simply hidden.
+ * plainly opaque, and content that passes behind one is simply hidden. (One bar gives its surface
+ * up for a while: Browse's, over a flat hero at the top of Comical Home, by a style of its own.)
  *
  * Deliberately NOT opinionated about layout: bars differ genuinely (an overlaid bar the content
  * scrolls under vs. an in-flow one; a title row vs. selectors vs. a search field), so positioning and
  * content stay with the caller via `style` + `children`. An Animated.View, so a caller can hand it a
  * Reanimated style for a collapsing/sliding bar (Browse, Search) without a second wrapper.
+ *
+ * `bare` is the desktop's bar (`useGlassChrome`): no fill and no rule, since its title and controls
+ * stand in glass capsules of their own. The page fades out under it instead, a soft edge that keeps
+ * what scrolls past from reading against the capsules.
  */
 export function BarSurface({
   children,
   style,
   safeAreaTop = true,
+  bare = false,
 }: {
   children?: ReactNode;
   /** Positioning + any animated transform/border for this particular bar. Accepts Reanimated styles
@@ -40,6 +47,7 @@ export function BarSurface({
    *  false for a secondary bar stacked BELOW one (e.g. Search's filter bar), which would otherwise
    *  add the inset a second time and sit too tall. */
   safeAreaTop?: boolean;
+  bare?: boolean;
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -56,7 +64,7 @@ export function BarSurface({
           // On the bar's own view rather than an absolute-fill layer behind it: a flat colour needs
           // nothing to sample, so the extra view the frosted version required (a blur that had to
           // sit UNDER the content) buys nothing now.
-          backgroundColor: theme.background,
+          backgroundColor: bare ? 'transparent' : theme.background,
           paddingTop: safeAreaTop ? insets.top : 0,
           // `barHairline`, not the generic `hairline`: with the bar painted the page's own colour
           // this line is the only thing marking it off, so it carries more weight than a card edge.
@@ -65,10 +73,17 @@ export function BarSurface({
           // section heading sits flush beneath and carries the edge for the pair) overrides the
           // colour from an animated style rather than toggling a prop through React state — see
           // StickySectionHeader's `pinnedValue`.
-          borderBottomColor: theme.barHairline,
+          borderBottomColor: bare ? 'transparent' : theme.barHairline,
         },
         style,
       ]}>
+      {bare ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[theme.background, `${theme.background}00`]}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       {children}
     </Animated.View>
   );

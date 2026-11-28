@@ -34,6 +34,15 @@ import { setBackdropRecede } from '@/lib/series-backdrop';
  * Route NAMES (`(home)`, `library`, …) are the trigger names; the TABS table in `app-tabs.tsx` keys
  * everything else by the tab's own name (`browse`, …), so the two are mapped here once.
  *
+ * Four tabs and the system's search tab (`role="search"`), Apple's standard kind, the App Store's
+ * and TV's: it opens a landing page with the field at the top and raises the keyboard only on a tap
+ * (`disableAutomaticSearchActivation`), and on iOS 27 stands in the bar with the others. (The
+ * prominent kind, apart at the bar's end with the keyboard up as it opens, was the first cut: there
+ * the tabs' inline large title collapsed on scroll.) History and New chapters share
+ * the Recent tab (`use-recent-view`) so that Settings keeps a tab of its own beside it. The search tab's route is
+ * `find`, not `search`: a tab directory named `search` would capture every push of the root
+ * `/search` page made from inside the tabs (see `tab-stack`).
+ *
  * The bar stays up over every page a tab pushes (they live in the tab's own stack — see
  * `tab-stack`) and goes only under the reader (`native-tab-bar`). The series page's backdrop —
  * the scale and dim behind it — is per screen inside the tab stacks now, not around this shell.
@@ -41,13 +50,12 @@ import { setBackdropRecede } from '@/lib/series-backdrop';
 const TAB_OF_ROUTE: Record<string, keyof typeof ROOT_TAB_PATHS> = {
   '(home)': 'browse',
   library: 'library',
-  history: 'history',
-  activity: 'activity',
+  recent: 'recent',
   settings: 'settings',
 };
 
 /** The tabs whose rows reorder as you read — see `noRecede` in `app-tabs.tsx`. */
-const NO_RECEDE = new Set<string>([ROOT_TAB_PATHS.history, ROOT_TAB_PATHS.activity]);
+const NO_RECEDE = new Set<string>([ROOT_TAB_PATHS.recent]);
 
 export default function AppTabs() {
   const theme = useTheme();
@@ -115,13 +123,9 @@ export default function AppTabs() {
           <NativeTabs.Trigger.Label>Library</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon sf={{ default: 'books.vertical', selected: 'books.vertical.fill' }} />
         </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="history" disableAutomaticContentInsets unstable_nativeProps={measured}>
-          <NativeTabs.Trigger.Label>History</NativeTabs.Trigger.Label>
-          <NativeTabs.Trigger.Icon sf="clock.arrow.circlepath" />
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="activity" disableAutomaticContentInsets unstable_nativeProps={measured}>
-          <NativeTabs.Trigger.Label>Activity</NativeTabs.Trigger.Label>
-          <NativeTabs.Trigger.Icon sf={{ default: 'bell', selected: 'bell.fill' }} />
+        <NativeTabs.Trigger name="recent" disableAutomaticContentInsets unstable_nativeProps={measured}>
+          <NativeTabs.Trigger.Label>Recent</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon sf={{ default: 'clock', selected: 'clock.fill' }} />
           {/* Not `hidden`: expo-router sends any children as the badge text before it reads
               `hidden`, so a zero count showed a "0" pip. The badge leaves the tree instead. */}
           {activityBadge > 0 ? <NativeTabs.Trigger.Badge>{String(activityBadge)}</NativeTabs.Trigger.Badge> : null}
@@ -130,6 +134,14 @@ export default function AppTabs() {
           <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
           {settingsBadge > 0 ? <NativeTabs.Trigger.Badge>{String(settingsBadge)}</NativeTabs.Trigger.Badge> : null}
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger
+          name="find"
+          role="search"
+          disableAutomaticSearchActivation
+          disableAutomaticContentInsets
+          unstable_nativeProps={measured}>
+          <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       </NativeTabs>
     </ContentWidthProvider>

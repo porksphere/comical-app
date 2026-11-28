@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
+  interpolateColor,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -14,11 +15,14 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HomeBookshelf, homeBookshelfHeight } from '@/components/home-bookshelf/home-bookshelf';
+import { HomePoster, homePosterHeight } from '@/components/home-hero/home-poster';
+import { HomeSplash, homeSplashHeight } from '@/components/home-hero/home-splash';
 import { BarSurface } from '@/components/bar-surface';
 import { BridgeThumb } from '@/components/bridge-thumb';
+import { GlassCapsule, SHELL_SEARCH_RESERVE } from '@/components/glass-surface';
 import { GridSkeleton } from '@/components/grid-skeleton';
 import { ContentFeed } from '@/components/content-feed';
-import { SearchIcon } from '@/components/icons/ui-icons';
+import { FilterIcon, SearchIcon } from '@/components/icons/ui-icons';
 import { SearchPill } from '@/components/search-pill';
 import { RetryBlock } from '@/components/retry-block';
 import { SeriesGrid } from '@/components/series-grid';
@@ -64,10 +68,12 @@ import type { Bridge, BridgeList } from '@/data/types';
 import { waitingChecks$ } from '@/data/web-check';
 import { friendlyError } from '@/lib/friendly-error';
 import { useHasSidebar } from '@/hooks/use-content-width';
+import { useGlassChrome } from '@/hooks/use-glass-chrome';
 import { useGridLayout } from '@/hooks/use-grid-layout';
-import { useBookshelfEntries, useHomeBookshelf, useHomeBookshelfAvailable } from '@/hooks/use-home-bookshelf';
+import { useBookshelfEntries, useHomeBookshelf, useHomeBookshelfAvailable, useHomeHeroStyle } from '@/hooks/use-home-bookshelf';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { useIsLargeScreen, useTopBarHeight } from '@/hooks/use-responsive';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
@@ -89,6 +95,9 @@ const NO_BRIDGES: Bridge[] = [];
 // The Comical bridge's icon is a bundled asset (not a remote URL), so the Bridge selector gets it as a
 // local `source` rather than through the URL-keyed `thumbnails` map (which only holds real bridges).
 const COMICAL_SOURCES: Record<string, number> = { [COMICAL_BRIDGE_ID]: COMICAL_ICON };
+
+/** How far the page scrolls before a bar that was bare over a hero has its surface back. */
+const BARE_BAR_SCROLL = 48;
 
 export default function BrowseScreen() {
   const ds = useDataSource();
@@ -596,6 +605,8 @@ export default function BrowseScreen() {
   // Shared with the series-detail bar so both stay the same height.
   const barHeight = useTopBarHeight();
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
+  // Beside the desktop's sidebar the bar is bare and its controls are glass capsules.
+  const glass = useGlassChrome();
   // Match the bridge dropdown's thumbnail size so the bar reads at the same scale.
   const thumbSize = BridgeThumbSize;
   // Desktop shows an always-visible search pill in the top bar; mobile shows just a search icon.
@@ -624,6 +635,7 @@ export default function BrowseScreen() {
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
   // instead it slides as a whole (see `headerStyle` below), X/Twitter-style.
   const headerHeight = useTopChromeHeight();
+
   // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
   // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
   // distance is `barHeight`, NOT `headerHeight`: the bar stops once its content band is gone,
@@ -635,6 +647,8 @@ export default function BrowseScreen() {
   // `sharedValues` + the plain `onListScroll` (both wired on the list below); a `gridScope` change
   // snaps the bar back to visible and scrolls the list to the top. The system bar on iOS does not
   // slide (a distance of 0 pins it), so there the hook only keeps the list's scroll bookkeeping.
+  // Nor does the desktop's bare bar: the shell's search field stands at its end and stays put, and
+  // a window's toolbar does not come and go with the scroll.
   const {
     scrollY,
     maxScrollY,
@@ -643,7 +657,7 @@ export default function BrowseScreen() {
     contentStyle: headerContentStyle,
     sharedValues,
     onScroll: onListScroll,
-  } = useSlidingBar(NATIVE_HEADER ? 0 : barHeight, { resetKey: gridScope, listRef });
+  } = useSlidingBar(NATIVE_HEADER || glass ? 0 : barHeight, { resetKey: gridScope, listRef });
   // The tab bar slides off the SAME shared values the top bar does — one offset, one content-end
   // measurement, both read on the UI thread, so the two bars can't disagree about a gesture or about
   // where the elastic bottom bounce starts. This used to be a `runOnJS(reportOffset)` per frame: a
@@ -653,24 +667,106 @@ export default function BrowseScreen() {
   // Pull-to-refresh: gesture (per platform), spinner, min-visible window and content shift all live
   // in the shared hook — the same one the Search grid uses.
   const pull = usePullToRefresh(scrollY, refreshCurrentView);
+  // Comical Home opens on the bookshelf: what the reader is in the middle of, ahead of the rails. Not
+  // on Favorites or a custom page, which are the reader's own arrangements, and not once its
+  // renderer has failed to start, when the rails simply begin the page as before.
+  //
+  // On trial beside it (Settings → Developer) are two flat heroes of the same series: the splash,
+  // which opens on the one read last and so takes them in order of how much each matters, and the
+  // poster, which stands them as the shelf does. Neither needs the shelf's renderer.
+  const heroStyle = useHomeHeroStyle();
+  const bookshelfOn = useHomeBookshelf();
+  const bookshelfAvailable = useHomeBookshelfAvailable();
+  const bookshelfShown =
+    bookshelfOn && (heroStyle !== 'shelf' || bookshelfAvailable) && isComical && !activeFavoritesPage && !activeCustomPage;
+  const bookshelf = useBookshelfEntries(bookshelfShown, heroStyle === 'splash');
+  const { height: windowHeight } = useWindowSize();
+  // A flat hero's picture runs up under the bar, which is bare over it at the top of the page: the
+  // system's bar on iOS, and the app's own elsewhere (`heroUnderBar` below).
+  const heroTop = headerHeight + BarContentGap;
+  const bookshelfHero = useMemo(() => {
+    if (!bookshelfShown || !bookshelf.length) return null;
+    if (heroStyle === 'splash') {
+      const splash = { width: railViewport, top: heroTop, bleed: heroTop };
+      return { element: <HomeSplash entries={bookshelf} {...splash} />, height: homeSplashHeight({ ...splash, windowHeight }) };
+    }
+    if (heroStyle === 'poster') {
+      return {
+        element: <HomePoster entries={bookshelf} width={railViewport} bleed={heroTop} pulled={pull.pulled} />,
+        height: homePosterHeight(railViewport, windowHeight),
+      };
+    }
+    return { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) };
+  }, [bookshelfShown, bookshelf, railViewport, heroStyle, heroTop, windowHeight, pull.pulled]);
+  const heroUnderBar = !NATIVE_HEADER && heroStyle !== 'shelf' && !!bookshelfHero;
   // A pinned section heading sits flush under the bar and draws its own rule, so the bar YIELDS its
   // own while one is up — otherwise the chrome reads as two banded edges a heading apart instead of
   // one surface. A shared value, written by the sticky on the UI thread and read here in an animated
   // style, so the two rules trade on the SAME frame; routed through React state the bar's left a
   // frame or two after the heading's arrived, which is two rules for two frames, every time.
   const stickyPinned = useSharedValue(0);
-  const barRuleStyle = useAnimatedStyle(
-    () => ({ borderBottomColor: stickyPinned.value ? 'transparent' : theme.barHairline }),
-    [theme.barHairline],
-  );
+  // Over a flat hero the bar is bare at the top of the page, as the system's is on iOS: the hero's
+  // picture runs up under it and fades out behind the selectors. The bar takes its surface and its
+  // rule back over the first of the scroll, as the picture leaves from under it, so nothing that
+  // follows the picture is read through a bar.
+  const barSurfaceStyle = useAnimatedStyle(() => {
+    const solid = heroUnderBar ? Math.min(1, Math.max(0, scrollY.value / BARE_BAR_SCROLL)) : 1;
+    return {
+      backgroundColor: interpolateColor(solid, [0, 1], [`${theme.background}00`, theme.background]),
+      borderBottomColor: stickyPinned.value ? 'transparent' : interpolateColor(solid, [0, 1], [`${theme.barHairline}00`, theme.barHairline]),
+    };
+  }, [heroUnderBar, theme.background, theme.barHairline]);
 
+  const selectors = (
+    <>
+      {currentBridge ? (
+        <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
+          <BridgeThumb
+            uri={currentBridge.thumbnail}
+            source={isComical ? COMICAL_ICON : undefined}
+            label={currentBridge.name}
+            size={thumbSize}
+            fill
+            style={glass && styles.capsuleThumb}
+          />
+        </HoldActionTarget>
+      ) : null}
+      {/* The sidebar lists the bridges when it's showing, so this would be a second control for one
+          selection sitting a few pixels from the first. The THUMBNAIL above stays either way —
+          it's the NSFW press-and-hold target, not decoration, and that has nowhere else to go. */}
+      {!railNav && (
+        <Selector
+          testID="browse.bridge-selector"
+          title="Bridge"
+          value={currentBridge?.id ?? ''}
+          options={visibleBridges.map((b) => b.id)}
+          onChange={selectBridge}
+          size="subtitle"
+          thumbnails={bridgeThumbnails}
+          sources={COMICAL_SOURCES}
+          labels={bridgeLabels}
+        />
+      )}
+      <Selector
+        testID="browse.page-selector"
+        title="Page"
+        value={pageKey(page)}
+        options={pageKeys}
+        onChange={selectPage}
+        size="subtitle"
+        labels={pageLabels}
+      />
+    </>
+  );
   const topBar = (
     // BarSurface carries the flat, full-bleed background + hairline shared by every bar in the app
     // (see bar-surface.tsx); the grid scrolls behind it. The hairline is always on EXCEPT while a
-    // section heading is pinned beneath it (barRuleStyle above) — it used to fade in over the first
-    // 8px of scroll so the bar read as part of the page while at rest, which made this the one bar
-    // in the app whose divider came and went with nothing else to explain it.
-    <BarSurface style={[styles.topBar, { height: headerHeight }, headerStyle, barRuleStyle]}>
+    // section heading is pinned beneath it, and over a flat hero at the top of the page, where the
+    // surface is off with it (barSurfaceStyle above) — it used to fade in over the first 8px of
+    // scroll on every page so the bar read as part of the page while at rest, which made this the
+    // one bar in the app whose divider came and went with nothing else to explain it. Beside the
+    // desktop's sidebar it is bare throughout (`bare`), so it takes none of that.
+    <BarSurface bare={glass} style={[styles.topBar, { height: headerHeight }, headerStyle, glass ? null : barSurfaceStyle]}>
       {/* Inner row capped to the content width so the selectors line up with the
           grid below, while the bar background stays full-bleed. */}
       {/* Cap+centre only on web; native fills the width so the bar aligns with the full-width grid. */}
@@ -680,46 +776,29 @@ export default function BrowseScreen() {
         style={[
           styles.selectorRow,
           { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined },
-          clearance > 0 && { paddingRight: TopLevelGutter + clearance },
+          (clearance > 0 || glass) && {
+            paddingRight: TopLevelGutter + clearance + (glass ? SHELL_SEARCH_RESERVE : 0),
+          },
           headerContentStyle,
         ]}>
-        {currentBridge ? (
-          <HoldActionTarget testID="browse.nsfw-hold" size={thumbSize}>
-            <BridgeThumb
-              uri={currentBridge.thumbnail}
-              source={isComical ? COMICAL_ICON : undefined}
-              label={currentBridge.name}
-              size={thumbSize}
-              fill
-            />
-          </HoldActionTarget>
-        ) : null}
-        {/* The rail lists the bridges when it's showing, so this would be a second control for one
-            selection sitting a few pixels from the first. The THUMBNAIL above stays either way —
-            it's the NSFW press-and-hold target, not decoration, and that has nowhere else to go. */}
-        {!railNav && (
-          <Selector
-            testID="browse.bridge-selector"
-            title="Bridge"
-            value={currentBridge?.id ?? ''}
-            options={visibleBridges.map((b) => b.id)}
-            onChange={selectBridge}
-            size="subtitle"
-            thumbnails={bridgeThumbnails}
-            sources={COMICAL_SOURCES}
-            labels={bridgeLabels}
-          />
-        )}
-        <Selector
-          testID="browse.page-selector"
-          title="Page"
-          value={pageKey(page)}
-          options={pageKeys}
-          onChange={selectPage}
-          size="subtitle"
-          labels={pageLabels}
-        />
-        {isLargeScreen && railNav ? (
+        {glass ? <GlassCapsule art={!!currentBridge}>{selectors}</GlassCapsule> : selectors}
+        {glass ? (
+          // The search field at this bar's end is the shell's, and looks across every bridge. What
+          // is left for the bar is the one thing that field doesn't do: a bridge's own search, with
+          // its filters and sorts. Comical has none of its own.
+          isComical || !currentBridge ? null : (
+            <Pressable
+              testID="browse.bridge-search"
+              onPress={openSearch}
+              accessibilityRole="button"
+              accessibilityLabel={`Search ${currentBridge.name} with filters`}
+              style={styles.searchPillTrailing}>
+              <GlassCapsule round>
+                <FilterIcon color={theme.text} size={17} />
+              </GlassCapsule>
+            </Pressable>
+          )
+        ) : isLargeScreen && railNav ? (
           // Wide: the shared trailing control every content tab uses (see `search-pill`). No right
           // margin — the icon nav the centred version reserved room for doesn't exist at this width.
           <View style={styles.searchPillTrailing}>
@@ -760,7 +839,7 @@ export default function BrowseScreen() {
     </BarSurface>
   );
   // On iOS the bar holds only system items: the bridge's circle as the leading menu button
-  // (the bridges, then the pages), the search trailing. The inline title names the view,
+  // (the bridges, then the pages). Search is the system's search tab, not an item here. The inline title names the view,
   // "<bridge> <page>", as the custom bar's selectors do, and is the NSFW hold target: a bar
   // button's hold is its menu, so the gesture moves to the one thing in the bar that is ours.
   const nativeHeader = (
@@ -776,7 +855,6 @@ export default function BrowseScreen() {
         pages={pageOptions}
         page={pageKey(page)}
         onSelectPage={selectPage}
-        onSearch={openSearch}
       />
     </>
   );
@@ -789,21 +867,6 @@ export default function BrowseScreen() {
       <RetryBlock message={gridError} error={resultsQuery.error} onRetry={() => resultsQuery.refetch()} />
     </View>
   ) : null;
-
-  // Comical Home opens on the bookshelf: what the reader is in the middle of, ahead of the rails. Not
-  // on Favorites or a custom page, which are the reader's own arrangements, and not once its
-  // renderer has failed to start, when the rails simply begin the page as before.
-  const bookshelfOn = useHomeBookshelf();
-  const bookshelfAvailable = useHomeBookshelfAvailable();
-  const bookshelfShown = bookshelfOn && bookshelfAvailable && isComical && !activeFavoritesPage && !activeCustomPage;
-  const bookshelf = useBookshelfEntries(bookshelfShown);
-  const bookshelfHero = useMemo(
-    () =>
-      bookshelfShown && bookshelf.length
-        ? { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) }
-        : null,
-    [bookshelfShown, bookshelf, railViewport],
-  );
 
   // The composed Home flattened into a typed row list for ContentFeed's virtualization. Same rail/grid
   // partition (and loading-skeleton shape) the old listHeader rendered inline, just as data. Only built
@@ -1010,6 +1073,10 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
     justifyContent: 'flex-end',
+  },
+  // Round in the capsule's round end, where the opaque bar's tile keeps its own corner.
+  capsuleThumb: {
+    borderRadius: BridgeThumbSize / 2,
   },
   selectorRow: {
     flexDirection: 'row',

@@ -8,10 +8,10 @@ import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TrashIcon } from '@/components/icons/ui-icons';
-import { TabFilterField, TabFilterTrigger, useTabFilter } from '@/components/tab-filter';
-import { NativeTabHeader } from '@/components/native-tab-header';
+import { RecentBar } from '@/components/recent/recent-bar';
+import { RecentSwitch } from '@/components/recent/recent-switch';
+import { useTabFilter } from '@/components/tab-filter';
 import { ScreenScrollMarker } from '@/components/screen-scroll-marker';
-import { TabTitleBar } from '@/components/tab-title-bar';
 import { HistoryRow } from '@/components/history-row';
 import { useZoomId, withZoomSource } from '@/components/zoom-source';
 import {
@@ -30,16 +30,15 @@ import { SwipeableRow } from '@/components/settings/swipeable-row';
 import { EmptyMessage } from '@/components/empty-message';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BarContentGap, BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, listPaddingTop, MaxTopLevelWidth, Spacing } from '@/constants/theme';
 import { historyQuery, libraryQuery, queryKeys } from '@/data/queries';
 import { useDataSource, useMockActive } from '@/data/source';
 import { DIRECT_CHAPTER_ID, type HistoryEntry } from '@/data/types';
 import { useBridgeMap } from '@/hooks/use-bridges';
 import { useVisibleByBridge } from '@/hooks/use-visible-by-bridge';
 import { useCenterInset, useSideInsets } from '@/hooks/use-content-width';
-import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useHideTabBarOnScroll } from '@/hooks/use-hide-tab-bar-on-scroll';
-import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useTopChromeHeight } from '@/hooks/use-native-header';
 import { useIsDesktop } from '@/hooks/use-responsive';
 import { useScrollToTopOnReselect } from '@/hooks/use-scroll-to-top-on-reselect';
 import { useRouter } from '@/lib/nav';
@@ -50,19 +49,20 @@ import { ROW_REORDER_TRANSITION, useRowTransition } from '@/lib/row-motion';
 import { scrollPhaseHandlers } from '@/lib/scroll-release';
 import { scrollbarInset } from '@/lib/scrollbar-inset';
 
-export default function HistoryScreen() {
+/** The Recent tab's History: what you have read, newest first, each row resuming where you stopped. */
+export function HistoryView({ ready }: { ready: boolean }) {
   const ds = useDataSource();
   const mock = useMockActive();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // The content column, not the window — the sidebar's inset is already out of it.
-  const filter = useTabFilter();
+  const filter = useTabFilter('recent');
   const query = filter.query;
   const queryClient = useQueryClient();
   const { nameOf, directOf } = useBridgeMap();
   const listRef = useRef<LegendListRef>(null);
   const rowTransition = useRowTransition(ROW_REORDER_TRANSITION);
-  useScrollToTopOnReselect('history', listRef);
+  useScrollToTopOnReselect('recent', listRef);
 
   // This list as a zoom surface — see AGENTS.md → Zoom transitions.
   const zoomSurface = useZoomSurfaceKey('history');
@@ -70,7 +70,6 @@ export default function HistoryScreen() {
   // AnimatedLegendList below), `onScroll` only keeps the bottom-bounce measurement in sync.
   const { sharedValues, onScroll } = useHideTabBarOnScroll();
   // Let the tab swap paint before mounting the row list (see use-deferred-mount).
-  const ready = useDeferredMount();
 
   const { data: items = undefined, error, isLoading, refetch } = useQuery(historyQuery(ds, mock));
   // History rows for collected series say where the reader stands in the series (chapters read of
@@ -183,7 +182,8 @@ export default function HistoryScreen() {
     <ZoomSurfaceContext.Provider value={zoomSurface}>
       <ThemedView style={styles.container}>
       {emptyBody ? (
-        <View style={[styles.centeredColumn, { paddingTop: headerHeight + BarContentGap }]}>
+        <View style={[styles.centeredColumn, { paddingTop: listPaddingTop(headerHeight) }]}>
+          <RecentSwitch />
           <View style={styles.centerFill}>{emptyBody}</View>
         </View>
       ) : (
@@ -193,6 +193,7 @@ export default function HistoryScreen() {
             // Full-width scroller so the scrollbar sits at the window edge; rows centered via sidePad.
             style={[styles.list, scrollbarInset(listPaddingTop(headerHeight))]}
             data={visible}
+            ListHeaderComponent={<RecentSwitch />}
             keyExtractor={(h) => `${h.bridgeId}:${h.seriesId}`}
             recycleItems={false}
             itemLayoutAnimation={rowTransition}
@@ -233,20 +234,7 @@ export default function HistoryScreen() {
         </ScreenScrollMarker>
       )}
 
-      {NATIVE_HEADER ? (
-        <NativeTabHeader title="History" filter={filter} placeholder="Filter history…" />
-      ) : (
-        <TabTitleBar
-          title="History"
-          holdTestID="history.nsfw-hold"
-          titleSlot={
-            filter.open ? (
-              <TabFilterField filter={filter} testID="history.search" placeholder="Filter history…" />
-            ) : undefined
-          }
-          right={<TabFilterTrigger filter={filter} testID="history.search" placeholder="Filter history…" />}
-        />
-      )}
+      <RecentBar view="history" filter={filter} />
     </ThemedView>
     </ZoomSurfaceContext.Provider>
   );
@@ -362,6 +350,17 @@ function HistoryItem({
             startRadius={6} // matches HistoryRow's thumbnail corner
             zoomSource={zoomSource}
             measureRef={thumbRef}
+            rowActions={[
+              {
+                label: 'Remove from History',
+                Icon: TrashIcon,
+                symbol: 'trash',
+                loading: false,
+                destructive: true,
+                testID: 'history-row.menu.remove',
+                onPress: onRemove,
+              },
+            ]}
             onOpen={() => onResume(null)}>
             {({ hidden }) => renderRow(hidden)}
           </SeriesCardMenu>

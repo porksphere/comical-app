@@ -3,9 +3,11 @@ import { Platform, StyleSheet, View, type ViewProps } from 'react-native';
 import type { AnimatedProps } from 'react-native-reanimated';
 
 import { BarSurface } from '@/components/bar-surface';
+import { GlassCapsule, SHELL_SEARCH_RESERVE } from '@/components/glass-surface';
 import { HoldActionTarget } from '@/components/hold-action-target';
 import { ThemedText } from '@/components/themed-text';
 import { MaxTopLevelWidth, Spacing, TopLevelGutter } from '@/constants/theme';
+import { useGlassChrome } from '@/hooks/use-glass-chrome';
 import { useTopBarHeight } from '@/hooks/use-responsive';
 import { testId } from '@/lib/test-id';
 import { useTitleFont } from '@/lib/title-font';
@@ -23,6 +25,10 @@ import { useWindowControlsClearance } from '@/lib/window-controls';
  * selector); `right` fills a trailing slot pushed to the far edge (e.g. the Library's search icon).
  * `holdTestID` makes the plain title the hold gesture's target (`HoldActionTarget`), as every tab's
  * title is on iOS; Browse and Library hold their icon instead, their titles opening menus.
+ *
+ * Beside the desktop's sidebar the bar is bare and its title a glass capsule (`useGlassChrome`),
+ * whose edge stands on the grid's own gutter. The row keeps its end clear for the shell's search
+ * field, which is drawn over it.
  */
 export function TabTitleBar({
   title,
@@ -39,18 +45,20 @@ export function TabTitleBar({
   leading?: ReactNode;
   right?: ReactNode;
   /** Extra style for the bar surface itself — e.g. an animated rule colour, for a screen whose
-   *  pinned section heading takes over the bottom edge (see StickySectionHeader). */
+   *  pinned section heading takes over the bottom edge (see StickySectionHeader). A bare bar has
+   *  no rule to style, so it goes unused there. */
   barStyle?: AnimatedProps<ViewProps>['style'];
   holdTestID?: string;
 }) {
   const titleFont = useTitleFont();
   const barHeight = useTopBarHeight();
+  const glass = useGlassChrome();
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   const titleText = (
     <ThemedText
       testID={title ? testId('screen-title', title) : undefined}
       numberOfLines={1}
-      style={[styles.title, titleFont && { fontFamily: titleFont, fontWeight: 'normal' }]}>
+      style={[styles.title, glass && styles.glassTitle, titleFont && { fontFamily: titleFont, fontWeight: 'normal' }]}>
       {title}
     </ThemedText>
   );
@@ -61,18 +69,30 @@ export function TabTitleBar({
   ) : (
     titleText
   );
+  const lead = (
+    <>
+      {leading != null && <View style={glass ? undefined : styles.leading}>{leading}</View>}
+      {titleSlot ?? heldTitle}
+    </>
+  );
   return (
-    <BarSurface style={[styles.topBar, barStyle]}>
+    <BarSurface bare={glass} style={[styles.topBar, glass ? null : barStyle]}>
       {/* Cap+centre only on web; native fills the width so the title aligns with the full-width grids. */}
       <View
         style={[
           styles.titleRow,
           { height: barHeight, maxWidth: Platform.OS === 'web' ? MaxTopLevelWidth : undefined },
+          glass && styles.glassRow,
           clearance > 0 && { paddingRight: Spacing.four + clearance },
+          // The shell's search field stands at the row's end (`ShellSearchField`).
+          glass && { paddingRight: TopLevelGutter + clearance + SHELL_SEARCH_RESERVE },
           leading != null && { paddingLeft: TopLevelGutter },
         ]}>
-        {leading != null && <View style={styles.leading}>{leading}</View>}
-        {titleSlot ?? heldTitle}
+        {glass ? (
+          <GlassCapsule art={leading != null}>{lead}</GlassCapsule>
+        ) : (
+          lead
+        )}
         {right != null && <View style={styles.right}>{right}</View>}
       </View>
     </BarSurface>
@@ -101,6 +121,13 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '700',
+  },
+  glassRow: {
+    paddingHorizontal: TopLevelGutter,
+  },
+  glassTitle: {
+    fontSize: 17,
+    lineHeight: 22,
   },
   // Browse's own step between its tile and the selector beside it.
   leading: {

@@ -51,7 +51,7 @@ export const KEY_ACTIONS = {
   'tab-browse': { label: 'Go to Browse', scope: 'global', keys: [k('1')], hint: 'Again to step through the bridges' },
   'tab-library': { label: 'Go to Library', scope: 'global', keys: [k('2')], hint: 'Again to step through the collections' },
   'tab-history': { label: 'Go to History', scope: 'global', keys: [k('3')] },
-  'tab-activity': { label: 'Go to Activity', scope: 'global', keys: [k('4')] },
+  'tab-activity': { label: 'Go to New chapters', scope: 'global', keys: [k('4')] },
   'tab-settings': { label: 'Go to Settings', scope: 'global', keys: [k('5')] },
   shortcuts: { label: 'Keyboard shortcuts', scope: 'global', keys: [k('f1')] },
 
@@ -76,6 +76,7 @@ export const KEY_ACTIONS = {
 export type KeyAction = keyof typeof KEY_ACTIONS;
 
 export const TAB_KEY_ACTIONS = ['tab-browse', 'tab-library', 'tab-history', 'tab-activity', 'tab-settings'] as const;
+export type TabKeyAction = (typeof TAB_KEY_ACTIONS)[number];
 
 export const KEY_SCOPE_LABELS: Record<KeyScope, string> = {
   global: 'Everywhere',

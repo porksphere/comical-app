@@ -28,12 +28,14 @@ function useSections(): Record<string, boolean> {
  * higher up and passed down. The record's identity is stable across an `assign`, so a parent that
  * memoized over it kept handing the old flag down: the toggle persisted and the rail didn't move
  * until a reload. Subscribing per consumer sidesteps the question entirely.
+ *
+ * `fallback` is what a section is before it has ever been toggled: a group open, its More closed.
  */
-export function useSectionOpen(name: string): boolean {
-  return useSections()[name] ?? true;
+export function useSectionOpen(name: string, fallback = true): boolean {
+  return useSections()[name] ?? fallback;
 }
 
-export function toggleSection(name: string): void {
-  const open = sections$.peek()[name] ?? true;
+export function toggleSection(name: string, fallback = true): void {
+  const open = sections$.peek()[name] ?? fallback;
   sections$.assign({ [name]: !open });
 }

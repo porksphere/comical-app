@@ -11,21 +11,16 @@ import { use$ } from '@legendapp/state/react';
 import { SidebarWidth } from '@/constants/theme';
 import { persisted$ } from '@/lib/observable';
 
-/** Floor: below this the labels truncate and the rail stops being readable — it should collapse
- *  rather than shrink, and collapsing isn't a thing here yet. Ceiling: past this the rail is taking
- *  space from a content column that is the point of the screen. */
+/** Floor: below this the labels truncate and the sidebar stops being readable. Ceiling: past this
+ *  it is taking space from a content column that is the point of the screen. */
 export const SidebarMinWidth = 180;
 export const SidebarMaxWidth = 400;
 
-/** Collapsed, the rail keeps the five destinations as icons rather than disappearing. Collapsing to
- *  nothing would take the navigation with it and need a floating button to get it back; this is the
- *  same collapsed/expanded pair Material's rail describes and Obsidian's ribbon implements. It is a
- *  separate STATE from the width, not a width of 64 — so a rail you dragged to 320, collapsed, and
- *  expanded again comes back at 320 rather than having been overwritten. */
-export const SidebarCollapsedWidth = 64;
+/** The icon rail's width: the nav of a regular width too narrow for the labelled sidebar (see
+ *  `navModeFor`). The layout's choice, never the user's, so it is not a state of the width below. */
+export const SidebarRailWidth = 64;
 
 const sidebarWidth$ = persisted$('comical:sidebarWidth', SidebarWidth);
-const sidebarCollapsed$ = persisted$('comical:sidebarCollapsed', false);
 
 export const clampSidebarWidth = (w: number): number =>
   Math.round(Math.min(SidebarMaxWidth, Math.max(SidebarMinWidth, w)));
@@ -37,17 +32,4 @@ export function useSidebarWidth(): number {
 
 export function setSidebarWidth(w: number): void {
   sidebarWidth$.set(clampSidebarWidth(w));
-}
-
-/** A `use`-prefixed wrapper, never a bare `use$` at a call site — see `sidebar-bridges.tsx`. */
-export function useSidebarCollapsed(): boolean {
-  return use$(sidebarCollapsed$);
-}
-
-export function toggleSidebarCollapsed(): void {
-  sidebarCollapsed$.set(!sidebarCollapsed$.peek());
-}
-
-export function expandSidebar(): void {
-  sidebarCollapsed$.set(false);
 }

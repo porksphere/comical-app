@@ -30,10 +30,10 @@ async function run(): Promise<void> {
   try {
     const res = await api.runBackgroundSync({});
     refreshAfterSync(res);
-    // Someone looking at the app already has the Activity badge in front of them.
+    // Someone looking at the app already has the New chapters badge in front of them.
     const { announced } = feedCounts(res, prefs.caughtUpOnly);
     if (announced > 0 && prefs.notifications && !document.hasFocus()) {
-      notifyDesktop(NEW_CHAPTERS_TITLE, await newChaptersBody(announced), '/activity');
+      notifyDesktop(NEW_CHAPTERS_TITLE, await newChaptersBody(announced), '/recent?view=new');
     }
   } catch {
     // Offline is an ordinary state; the next hour tries again.

@@ -2,6 +2,7 @@ import { type RefObject, useCallback, useMemo, useRef, useState } from 'react';
 import { View, type GestureResponderEvent, type ViewInstance } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
+import type { MenuRowSpec } from '@/components/context-menu-material';
 
 import type { SeriesEntry } from '@/data/types';
 import { measureZoomRect, type ZoomSourceKey } from '@/lib/series-zoom';
@@ -52,6 +53,10 @@ export type SeriesCardMenuProps = {
   /** This card's zoom-source key — forwarded so a navigating row's zoom blanks this card alone
    *  (see `SeriesCardMenuRequest.zoomSource`). Omitted on web, which has no zoom entrance. */
   zoomSource?: ZoomSourceKey;
+  /** The held item's own actions, when it is a row of a list rather than a card: History's Remove,
+   *  New chapters' Mark read and Clear. They also sit behind the row's swipe (hover on web); here
+   *  they are a hold or a right-click away too. */
+  rowActions?: readonly MenuRowSpec[];
   /** What tapping the item does. iOS's lifted preview does the same when tapped; unused here. */
   onOpen?: () => void;
   /** `hidden` is true while THIS card's menu is open — the child should hide just its COVER/thumbnail
@@ -64,7 +69,19 @@ export type SeriesCardMenuProps = {
   }) => React.ReactNode;
 };
 
-export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, coverAspect, startRadius, measureRef, zoomSource, children }: SeriesCardMenuProps) {
+export function SeriesCardMenu({
+  enabled,
+  bridgeId,
+  bridge,
+  entry,
+  direct,
+  coverAspect,
+  startRadius,
+  measureRef,
+  zoomSource,
+  rowActions,
+  children,
+}: SeriesCardMenuProps) {
   const anchorRef = useRef<ViewInstance>(null);
   // Where the hold began — the arming distance is measured from here (see `holdArmed`). Shared values,
   // because the gesture's worklets are the only thing that reads or writes them.
@@ -89,6 +106,7 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
         coverAspect,
         startRadius,
         zoomSource,
+        rowActions,
         rect: { x: absoluteX - 80, y: absoluteY - 110, width: 160, height: 220 },
         onClose,
       });
@@ -98,12 +116,12 @@ export function SeriesCardMenu({ enabled, bridgeId, bridge, entry, direct, cover
       if (target) {
         measureZoomRect(target, (rect) => {
           if (rect.width > 0 && rect.height > 0) {
-            openSeriesCardMenu({ entry, bridgeId, bridge, direct, coverAspect, startRadius, zoomSource, rect, onClose });
+            openSeriesCardMenu({ entry, bridgeId, bridge, direct, coverAspect, startRadius, zoomSource, rowActions, rect, onClose });
           }
         });
       }
     },
-    [bridgeId, bridge, entry, direct, coverAspect, startRadius, zoomSource, measureRef],
+    [bridgeId, bridge, entry, direct, coverAspect, startRadius, zoomSource, rowActions, measureRef],
   );
 
   // A PAN that only activates after a hold — not a LongPress. The difference is the whole peek-and-

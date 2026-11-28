@@ -95,7 +95,43 @@ preference into `Appearance.setColorScheme` on iOS — without that a dark theme
 window and the bar glares white. It is
 the one place SF Symbols are used instead of lucide, because the system bar draws its own items. Its
 triggers are named by ROUTE (`(home)`, `library`, …); the custom shell's `TABS` table keys by tab name
-(`browse`, …), and `app-tabs.ios.tsx` maps between the two for scroll-to-top. Per-tab safe-area
+(`browse`, …), and `app-tabs.ios.tsx` maps between the two for scroll-to-top. There are four tabs,
+Browse, Library, Recent and Settings, and the system's search tab (`role="search"`, route `find`:
+a tab directory named `search` would capture every push of the root `/search` from inside the
+tabs). It is Apple's STANDARD search tab, the App Store's and TV's (WWDC26's "Search" session): a
+landing page under a large "Search" with the field stacked under it at the top, the keyboard only
+on a tap (`disableAutomaticSearchActivation`, which on iOS 27 also keeps the tab in the bar with
+the others). The prominent kind, apart at the bar's end with the keyboard up as it opens, was the
+first cut, and under it the tab's inline large title collapsed on scroll. Its large title is the
+tabs' `inline` one, on the bar's own row beside the items, as the App Store's is, with the field
+stacked under the bar; the standard one (`always`), on a row of its own under the items and
+collapsing into the bar on scroll, stood under the bar where no other tab's does, and stays as a
+trial in Settings → Developer (`useSearchTitleTrial`). Its list is the one the system insets by the
+bars (`systemInsets`), as a native app's is: a title shrinking with the finger follows it only over
+such a list, and padded for its bar by hand, as every other list here is, it snapped between its
+sizes and the list jumped with the bar. While the field is in use the bar goes where its items
+stand in a side column (the folded Duo, a phone on its side), the system's default
+(`hidesNavigationBarDuringPresentation`), since the column stays when the bar goes; where the bar
+runs along the top (`useMenuLeads`) it stays, with a small "Search" in it, since gone it took the
+source, filters and sort with it and no scroll brings it back during a search. A row of
+the source, filters and sort under the field, where Music puts its scope bar, was built and taken
+out: the bar's own items were the better controls. Kept instead, the bar was a row with nothing in
+it beside a side column, and one lone button over the field in portrait; the kept bar, titled or
+not, stays as a trial too (`useSearchBarTrial`). Its title is the large title set apart from the
+small one (iOS 26's `largeTitle`, the small `title` nil unless the titled trial asks for it,
+through `nav-bar-large-title`; `NativeTabHeader`'s `barTitle`): since iOS 26 a large title scrolls
+with the content, and with the bar kept through a search the small title stood in the bar over the
+large one still in the list. That tab is the
+Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
+filters), and before anything is typed it lists the sources (`SearchSources`). That menu is Browse's
+kind (`useSearchSourceMenu` through `NavBarLeadingMenu`): the picked source's circle as the button
+and each source's tile on its row, set in place; in the header config it went stale and doubled. Its list's bottom
+inset follows the keyboard (`keyboardInsets`). It is where iOS finds things: Browse has no search button, and
+Library's and Recent's magnifiers only narrow what the tab shows (`NativeTabHeader`'s filter; a
+pull-down field under the title was tried and fought the `inline` title). The Search screen, every mode, matches your library almost as you
+type and asks the sources once typing pauses (`SOURCES_DELAY_MS`, two letters at least) or at
+once on submit; beside the desktop's shell field the sources wait for Enter, since typing there
+narrows the tab under it. Per-tab safe-area
 insets already include the system bar, so `BottomTabInset` is 0 on iOS and `useHideTabBarOnScroll`
 leaves `tabBarProgress` at 0 there; a ROOT overlay (toast, request pill, card context menu) pads by
 `RootTabBarInset` instead, since the root provider's insets don't know about the bar. The bar has no
@@ -126,7 +162,7 @@ the root stack and react-native-screens looks no further than the tab bar contro
 that is not full screen. Elsewhere it is expo-status-bar's.
 
 What goes IN the iOS bar follows Apple's tiering, not the custom bar's row. The bar holds the
-tab's large title, its menu and the search (`NativeTabHeader`, above). The BAR slides away
+tab's large title, its menu and its filter (`NativeTabHeader`, above). The BAR slides away
 as the content scrolls down and back as it scrolls up: iOS 27's bar
 minimization, the way Settings' own pages behave, asked for on every tab and pushed bar
 `SLIDE_AWAY_BAR` in `lib/native-bar.ts`, react-native-screens' header config through
@@ -142,10 +178,8 @@ label and reports the press and its end to the same ramped hold (`useHoldAction`
 `Stack.Toolbar.Menu`, leading the title where the bar runs along the top, where Android's and web's
 selector sits (`useMenuLeads`: UIKit's `verticalBarEdge` through the local module
 `modules/vertical-bar-edge`, the window's shape before iOS 27.1), and elsewhere (a phone on its side, the Duo folded or open, all of
-which lay the bar out as a side column) among the trailing items: Browse's in a glass group of its own, a zero-width
-`Stack.Toolbar.Spacer` splitting it from the search (UIKit splits one placement's shared glass at
-a fixed space), the Library's in one group with the arranging `⋯` menu, what the tab shows and
-how it is arranged, with the system search item in its own group at the edge,
+which lay the bar out as a side column) among the trailing items: Browse's alone, the Library's
+in one group with the arranging `⋯` menu, what the tab shows and how it is arranged,
 flat — inline sections, never submenus, so every pick is open and tap — Browse the current
 bridge's thumbnail as a circle over the bridges and then the pages as checkmarked rows
 (`components/browse-native-toolbar.tsx`), Library the view's mark (the
@@ -259,6 +293,9 @@ Material Symbol paired with its row's SF Symbol in `components/icons/material-sy
 row names its glyph once; a symbol missing there draws nothing on Android and warns in
 development. Each item carries its row's test id as a Compose test tag.
 Series cards there keep the custom hold menu for now.
+A row of a list hands its own actions to the menu (`rowActions`: History's Remove, New chapters'
+Mark read and Clear), so they are a hold away as well as a swipe, on every platform's menu
+(`withRowActions` orders them among the series' rows, destructive last).
 Series cards and the History and Activity rows wear it through `series-card-menu.ios.tsx`: a
 card's cover, or a row's thumbnail, grows into the cover alone (`SeriesCardPreview`), as large as
 fits over the menu, the way Books and Photos preview a held item; Android's hold popup grows the
@@ -344,8 +381,57 @@ series page flips it twice per visit (details ⇄ reader, the search layer), and
 the modal itself the search layer vanished on open and every open mounted the page twice.
 
 `apps/mobile/src/components/app-tabs.tsx` is the Android + web shell (`expo-router/ui`'s headless
-`Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the icon rail at the regular size class, the
-sliding bottom bar on phones, and the web-only panes.
+`Tabs`/`TabList`/`TabTrigger`, plain `Pressable`s): the sliding bottom bar on phones, the side
+navigation on wider windows, and the web-only panes.
+
+History and New chapters (the activity feed) share ONE tab, Recent (`app/(tabs)/recent`), so a
+phone's bar has room for Settings and, on iOS, the search tab. Recent, not Reading: a Library
+collection called Reading is common, and the sidebar showed the two one above the other. Which
+list it shows is a persisted scope of the tab (`hooks/use-recent-view.ts`), the way a bridge is Browse's: the views are
+`components/recent/history-view.tsx` and `activity-view.tsx`, and `RecentSwitch` switches them
+as the list's first row (and above an empty state) — the system's segmented control on iOS
+(`recent-switch.ios.tsx`), tabs on Android and web. In the list rather than pinned under the bar,
+because on iOS nothing may stand between the bar and its list. Each view's list draws its own
+control, so the view changes once the tapped control's thumb has slid (`THUMB_SLIDE_MS`): changed on
+the tap, the control under the finger was replaced by one already on the other side. The labelled sidebar lists the views
+as rows of their own (`sidebar-recent.tsx`), so there the screen leaves the switch out and titles
+its bar with the view (`RecentBar`, `useSidebarListsScopes`); everywhere else the bar says
+"Recent". `/recent?view=new` opens New chapters (the desktop's notification). The digit keys kept
+their actions: 3 is History, 4 New chapters.
+
+The side navigation has two forms (`components/app-sidebar.tsx`, chosen by `navModeFor`). The
+SIDEBAR, from `SidebarBreakpoint`, is a panel floating in from the window's edges the way a desktop
+sidebar is drawn: a top row holding the window's own traffic lights in the Mac shell (the shell's
+`trafficLightPosition` in `apps/desktop/src/main.ts` and the row's metrics are one pair of numbers,
+change them together) or the app's mark elsewhere, with Settings as a button at its end; then
+groups of rows under small headings. It holds no search field. A heading's LABEL is its tab
+(Browse, Library, Recent: the same `TabTrigger` the bottom bar's button is, so `tab.<name>` and
+its label still reach it) and the caret beside it opens and closes the group, whose rows are the
+tab's scopes. A heading's press resets the scope to its first row only where the sidebar lists the
+scopes; on the icon rail it is just the tab. A group longer than `SIDEBAR_FOLD_AT` rows folds the
+rest behind a More row (`lib/sidebar-fold.ts`), keeping the selected row in view. It is resizable
+and NOT collapsible: the collapse toggle and its stored preference were taken out for this layout's
+first pass. The RAIL is the icon column a regular width short of the breakpoint gets on a device.
+
+Beside that sidebar a tab's own top bar is bare (`useGlassChrome`, `BarSurface`'s `bare`): no fill
+and no rule, its title and its controls in glass capsules (`components/glass-surface.tsx`) over a
+soft fade of the page, standing still (Browse's does not slide away there), and nothing pins under
+it (`StickySectionHeader` draws nothing, as under the iOS bar). The desktop has ONE search field,
+at the end of that bar on every tab: the shell's (`ShellSearchField` in `sidebar-search.tsx`, drawn
+by `app-tabs` over the content region, the bars keeping `SHELL_SEARCH_RESERVE` clear for it), so it
+is the same field, text and focus kept, over the results pane it opens. It searches every bridge.
+What else a bar searched is folded into it rather than being a second field. A tab's in-place
+filter has no field there: on Library and Recent what is typed into the shell's field
+narrows that tab as it is typed (`useTabFilter` reads it for the tab's own pane key), and the
+results pane waits for Enter, where on Browse it opens with the first letter. An icon that opened
+the filter in the title's capsule was built first and was two search bars on screen again. A
+bridge's own Search, with its filters, opens from a filter button on Browse while a bridge other
+than Comical is picked. The field stands down while a series, a "See all" or that bridge search is open over the
+content region with a bar of its own, and comes back while it is being typed into. Web only, since the glass is a backdrop blur, and only on a tab's own screen
+(`ContentWidthProvider`'s `tabRoot`): a pane over the content region keeps its opaque bar. On
+Android the sidebar's panel is the opaque panel colour and the bars are unchanged. The content
+region still starts beside the sidebar, not under it, so the panel's glass has only the page's
+colour behind it for now.
 
 The visible bar there is NOT the `TabList`. Its slide is a Reanimated animated style, which a
 `TabList` can't carry (it renders a plain `View`, and `asChild` routes through a Slot that
@@ -1308,6 +1394,35 @@ then loses its device (`renderer.onDeviceLost`), which draws nothing more and le
 for good. That is every iOS Simulator: Dawn's Metal backend has no comparison samplers there, the
 shadow's pass asks for one, and the device is lost on the first frame, so a simulator's Home has
 no shelf and the capture workflow's iPhone shots are of the rails.
+
+**Two flat heroes are on trial beside the shelf** (Settings → Developer → Home opens on;
+`useHomeHeroStyle`, kept with the shelf's own switch and read as the shelf in a build without that
+screen). Both show the shelf's own series (`useBookshelfEntries`) and say and open what the shelf
+does, through the one `useShelfOpening` the shelf also reads, so the three cannot disagree with
+each other or with the History and Activity tabs. The splash (`components/home-hero/home-splash.tsx`)
+is the series read last as its cover across the top of the page, running up under the bar; it takes
+the series in order of how much each matters (`ranked`), since it opens on its first. The poster (`home-poster.tsx`) is
+the cover whole, as the book its card draws, over that cover out of focus, the others standing
+smaller to either side as the shelf stands them. A feed too wide for a cover to cross
+(`HERO_WIDE_FROM`) lays either out with its words beside the book. Their layout is `lib/home-hero`,
+pure and tested; `useHeroPager` is the sideways drag both share, its position a shared value the
+pictures follow on the UI thread. Neither needs the shelf's renderer, so one that failed to start
+takes only the shelf away. A press that lands as a drag ends is not a tap (`tapped`): a browser
+sends the click a mouse drag ends in to whatever is under the pointer. The series page opens out of
+the hero's picture of the front series and goes back into it, read or details alike
+(`useHeroOpen`): the app's zoom off the picture's rect on Android, the system's out of a
+`ZoomSource` over it on iOS, as a History row's thumbnail does both. The hero is a zoom surface of
+its own by name (`home-hero`): under the feed's it would be asked for by the feed's rows, which
+don't hold it, and the page would be told its source had gone.
+
+**The bar is bare over a flat hero at the top of the page, on every platform.** The hero's picture
+runs up under it. A cover out of focus, the poster's and a wide splash's, is left as it is, even
+enough to read the bar's title on; the splash's sharp cover fades out behind the title in the
+page's own colour (`HeroFades`' `under`). On iOS that
+is the system bar's own scroll-edge appearance. On Android and the web it is the one time a
+`BarSurface` gives up its surface: Browse's takes its fill and its rule back over the first of the
+scroll (`heroUnderBar`, `barSurfaceStyle`, `BARE_BAR_SCROLL` in the Home screen), so nothing that
+follows the picture is read through a bar, and it is the plain bar again on every other page.
 
 # Testing: new screens need a flow
 

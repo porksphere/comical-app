@@ -20,8 +20,21 @@ type CardMenuRowsProps = {
   bridge?: string;
   entry: SeriesEntry;
   direct?: boolean;
+  /** See `SeriesCardMenuProps.rowActions`. */
+  rowActions?: readonly MenuRowSpec[];
   children: (rows: MenuRowSpec[]) => ReactElement;
 };
+
+/**
+ * The series' rows with the held row's own actions among them: the plain ones after the series'
+ * plain ones, the destructive ones last. A menu closes on its destructive rows, and the system menu
+ * gives the trailing run of them a section of its own.
+ */
+export function withRowActions(rows: readonly MenuRowSpec[], actions: readonly MenuRowSpec[] = []): MenuRowSpec[] {
+  const plain = (r: MenuRowSpec) => !r.destructive;
+  const destructive = (r: MenuRowSpec) => !!r.destructive;
+  return [...rows.filter(plain), ...actions.filter(plain), ...rows.filter(destructive), ...actions.filter(destructive)];
+}
 
 /** What a saved series is filed with, the same snapshot every card-menu write sends. */
 function seriesSnapshot(entry: SeriesEntry) {
@@ -49,6 +62,7 @@ export function SeriesCardMenuRows({
   bridge,
   entry,
   direct,
+  rowActions,
   saveSubmenu,
   children,
 }: CardMenuRowsProps & { saveSubmenu?: () => SubmenuSpec }) {
@@ -144,7 +158,7 @@ export function SeriesCardMenuRows({
       onPress: resetProgress,
     },
   ];
-  return children(rows);
+  return children(withRowActions(rows, rowActions));
 }
 
 /**

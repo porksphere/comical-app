@@ -5,8 +5,22 @@ public class NavBarLargeTitleModule: Module {
     Name("NavBarLargeTitle")
 
     View(NavBarLargeTitleView.self) {
+      Events("onReport")
+
       Prop("mode") { (view: NavBarLargeTitleView, mode: String) in
         view.mode = mode
+      }
+
+      Prop("largeTitle") { (view: NavBarLargeTitleView, largeTitle: String?) in
+        view.largeTitle = largeTitle
+      }
+
+      Prop("barTitle") { (view: NavBarLargeTitleView, barTitle: String?) in
+        view.barTitle = barTitle
+      }
+
+      Prop("report") { (view: NavBarLargeTitleView, report: Bool) in
+        view.report = report
       }
 
       OnViewDidUpdateProps { (view: NavBarLargeTitleView) in
@@ -24,11 +38,33 @@ public class NavBarLargeTitleModule: Module {
 /// way back up. This view, placed in the page where it can reach the screen, sets the mode the
 /// page asks for on the screen's navigation item, and sets it again whenever the library puts its
 /// own back (it observes the property), so the mode holds across every header update.
+///
+/// With `report` on it describes what UIKit does with the bar through `onReport`: the item's
+/// mode and search setup when it attaches and a moment later, each time the mode is changed
+/// under it, and each time the bar's height moves by more than a few points. The search tab's
+/// large title collapses on scroll where no other tab's does, and these are what tell it apart.
 final class NavBarLargeTitleView: ExpoView {
   var mode = "inline"
+  /// The large title's own text (iOS 26's `largeTitle`), set apart from the bar's small `title`,
+  /// which is then `barTitle` or nil: the large title scrolls with the content, and a page whose bar
+  /// stays through a search would otherwise show the small title in the bar over the large one
+  /// still in the list.
+  var largeTitle: String?
+  var barTitle: String?
+  var report = false
+  let onReport = EventDispatcher()
 
   private weak var navigationItem: UINavigationItem?
   private var observation: NSKeyValueObservation?
+  private var titleObservation: NSKeyValueObservation?
+  private var barObservation: NSKeyValueObservation?
+  private var scrollObservation: NSKeyValueObservation?
+  private var lastBarHeight: CGFloat = -1
+  private var lastTitle = ""
+  private var reports = 0
+
+  /// Enough for an open, a few scrolls and a return, and no more: each lands in a persisted log.
+  private static let maxReports = 40
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
@@ -55,6 +91,7 @@ final class NavBarLargeTitleView: ExpoView {
 
   private func attach() {
     guard let controller = owningController(of: self) else {
+      send("attach: no owning view controller")
       return
     }
     let item = controller.navigationItem
@@ -62,8 +99,31 @@ final class NavBarLargeTitleView: ExpoView {
       return
     }
     navigationItem = item
-    observation = item.observe(\.largeTitleDisplayMode, options: [.new]) { [weak self] _, _ in
+    // react-native-screens sets the title back on every header update.
+    titleObservation = item.observe(\.title, options: [.new]) { [weak self] _, _ in
       self?.apply()
+    }
+    observation = item.observe(\.largeTitleDisplayMode, options: [.old, .new]) { [weak self] _, change in
+      guard let self else {
+        return
+      }
+      if let old = change.oldValue, let new = change.newValue, old != new {
+        self.send("mode changed \(name(of: old)) -> \(name(of: new))")
+      }
+      self.apply()
+    }
+    if let bar = controller.navigationController?.navigationBar {
+      barObservation = bar.observe(\.bounds, options: [.new]) { [weak self] bar, _ in
+        self?.barMoved(bar)
+      }
+    }
+    send("attach " + describe(controller))
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+      guard let self, let controller = owningController(of: self) else {
+        return
+      }
+      self.send("settled " + self.describe(controller))
+      self.watchScroll(controller)
     }
   }
 
@@ -77,6 +137,135 @@ final class NavBarLargeTitleView: ExpoView {
     if navigationItem.largeTitleDisplayMode != wanted {
       navigationItem.largeTitleDisplayMode = wanted
     }
+    // nil, never "": a blank text title is drawn as a pair of quotation marks.
+    if #available(iOS 26.0, *), let largeTitle, !largeTitle.isEmpty {
+      if navigationItem.largeTitle != largeTitle {
+        navigationItem.largeTitle = largeTitle
+      }
+      let small = barTitle?.isEmpty == false ? barTitle : nil
+      if navigationItem.title != small {
+        navigationItem.title = small
+      }
+    }
+  }
+
+  /// The title can change without the bar changing height (the search tab's collapses so), so the
+  /// list's scroll is watched too, and a line written whenever the title views or the search's
+  /// state differ from the last line's.
+  private func watchScroll(_ controller: UIViewController) {
+    guard #available(iOS 15.0, *), let scroll = controller.contentScrollView(for: .top) else {
+      return
+    }
+    scrollObservation = scroll.observe(\.contentOffset, options: [.new]) { [weak self, weak controller] scroll, _ in
+      guard let self, let controller, let bar = controller.navigationController?.navigationBar else {
+        return
+      }
+      let active = controller.navigationItem.searchController?.isActive ?? false
+      let state = "active=\(active) " + self.largeTitleViews(in: bar)
+      guard state != self.lastTitle else {
+        return
+      }
+      self.lastTitle = state
+      self.send("scroll y=\(Int(scroll.contentOffset.y.rounded())) bar=\(Int(bar.bounds.height.rounded())) " + state)
+    }
+  }
+
+  private func barMoved(_ bar: UINavigationBar) {
+    let height = bar.bounds.height
+    guard abs(height - lastBarHeight) >= 6 else {
+      return
+    }
+    lastBarHeight = height
+    send("bar height \(Int(height.rounded())) " + largeTitleViews(in: bar))
+  }
+
+  private func send(_ message: String) {
+    guard report, reports < Self.maxReports else {
+      return
+    }
+    reports += 1
+    let title = navigationItem?.title ?? largeTitle ?? "?"
+    onReport(["message": "[\(title)] \(message)"])
+  }
+
+  private func describe(_ controller: UIViewController) -> String {
+    let item = controller.navigationItem
+    var parts = [
+      "vc=\(type(of: controller))",
+      "nav=\(controller.navigationController.map { "\(type(of: $0))" } ?? "none")",
+      "mode=\(name(of: item.largeTitleDisplayMode)) wanted=\(name(of: wanted))",
+      "prefersLarge=\(controller.navigationController?.navigationBar.prefersLargeTitles ?? false)",
+    ]
+    if let search = item.searchController {
+      var s = "search active=\(search.isActive) hidesOnScroll=\(item.hidesSearchBarWhenScrolling)"
+      if #available(iOS 16.0, *) {
+        s += " preferred=\(item.preferredSearchBarPlacement.rawValue) actual=\(item.searchBarPlacement.rawValue)"
+      }
+      if #available(iOS 26.0, *) {
+        s += " toolbarIntegration=\(item.searchBarPlacementAllowsToolbarIntegration)"
+      }
+      parts.append(s)
+    } else {
+      parts.append("search=none")
+    }
+    if #available(iOS 18.0, *), let tab = controller.tabBarController?.selectedTab {
+      parts.append("tab=\(type(of: tab))")
+    }
+    if #available(iOS 15.0, *) {
+      parts.append("contentScroll=\(controller.contentScrollView(for: .top) != nil)")
+    }
+    if let bar = controller.navigationController?.navigationBar {
+      parts.append("bar=\(Int(bar.bounds.height.rounded())) " + largeTitleViews(in: bar))
+    }
+    return parts.joined(separator: " ")
+  }
+
+  /// The bar's large title views, by their private class names, with their height and alpha: which
+  /// of them UIKit is showing says whether the title is inline, on its own row, or collapsed.
+  private func largeTitleViews(in bar: UINavigationBar) -> String {
+    var found: [String] = []
+    func walk(_ view: UIView, depth: Int) {
+      let name = String(describing: type(of: view))
+      if name.contains("LargeTitle") || name.contains("TitleControl") {
+        let font = firstLabel(in: view).map { " font=\(Int($0.font.pointSize.rounded()))" } ?? ""
+        found.append("\(name)(h=\(Int(view.bounds.height.rounded())) a=\(String(format: "%.2f", view.alpha))\(font)\(view.isHidden ? " hidden" : ""))")
+      }
+      if depth < 6 {
+        for sub in view.subviews {
+          walk(sub, depth: depth + 1)
+        }
+      }
+    }
+    walk(bar, depth: 0)
+    return found.isEmpty ? "titleViews=none" : "titleViews=" + found.joined(separator: ",")
+  }
+}
+
+private func firstLabel(in view: UIView) -> UILabel? {
+  if let label = view as? UILabel, !(label.text ?? "").isEmpty {
+    return label
+  }
+  for sub in view.subviews {
+    if let label = firstLabel(in: sub) {
+      return label
+    }
+  }
+  return nil
+}
+
+private func name(of mode: UINavigationItem.LargeTitleDisplayMode) -> String {
+  switch mode {
+  case .automatic:
+    return "automatic"
+  case .always:
+    return "always"
+  case .never:
+    return "never"
+  default:
+    if #available(iOS 17.0, *), mode == .inline {
+      return "inline"
+    }
+    return "raw\(mode.rawValue)"
   }
 }
 

@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useSideInsets } from '@/hooks/use-content-width';
+import { useGlassChrome } from '@/hooks/use-glass-chrome';
 import { NATIVE_HEADER } from '@/hooks/use-native-header';
 import { useTheme } from '@/hooks/use-theme';
 import { focusSkip } from '@/lib/focus-nav';
@@ -32,6 +33,13 @@ const SNAP_SPEED = 0.12;
 // Under the native bar nothing pins at all: the current heading is announced in the bar's title
 // instead — see the component doc.
 const IN_BAR = NATIVE_HEADER;
+
+/** Nothing pins under a bar that has no surface for a band to meet: the system's on iOS, and the
+ *  desktop's bare one (`useGlassChrome`), where a band under the capsules would be a second bar. */
+function useNothingPins(): boolean {
+  const glass = useGlassChrome();
+  return IN_BAR || glass;
+}
 
 /**
  * WHICH heading belongs at the pin line, and how far the band has been pushed out — both derived
@@ -131,13 +139,14 @@ export type InlineHeadingPin = {
  */
 export function useInlineHeadingStyle(hidden: boolean, pin?: InlineHeadingPin) {
   const { firstTop, stickyTop, bandPadding = 0, scrollOffset, barOffset } = pin ?? {};
+  const unpinned = useNothingPins();
   return useAnimatedStyle(() => {
     // Short-circuited before `scrollOffset` is read, so a heading that is not standing down has no
     // scroll dependency at all — the common case, and the one every row is in while scrolling.
-    if (IN_BAR || !hidden || firstTop === undefined || stickyTop === undefined || !scrollOffset) return { opacity: 1 };
+    if (unpinned || !hidden || firstTop === undefined || stickyTop === undefined || !scrollOffset) return { opacity: 1 };
     const line = scrollOffset.value + stickyTop + bandPadding + (barOffset?.value ?? 0);
     return { opacity: isPinned(firstTop, line) ? 0 : 1 };
-  }, [hidden, firstTop, stickyTop, bandPadding, scrollOffset, barOffset]);
+  }, [unpinned, hidden, firstTop, stickyTop, bandPadding, scrollOffset, barOffset]);
 }
 
 /**
@@ -296,6 +305,7 @@ export function StickySectionHeader<S extends StickySection>({
   renderHeader: (section: S) => ReactElement;
 }) {
   const theme = useTheme();
+  const unpinned = useNothingPins();
   // The band runs the list's full width; its heading sits where the list's content does.
   const insets = useSideInsets();
   const bandHeight = contentHeight + bandPadding * 2;
@@ -465,7 +475,7 @@ export function StickySectionHeader<S extends StickySection>({
   }, [sections, pinLine, scrollOffset, barOffset, shown, bandHeight]);
 
   // Under the native bar the reporting above is the whole job — see the component doc.
-  if (IN_BAR || !sections[shown]) return null;
+  if (unpinned || !sections[shown]) return null;
   // The three headings the ride can land on. `shown` sits in the middle so a crossing in EITHER
   // direction has its heading already rendered; the two neighbours are outside the clip and
   // therefore invisible until one of them arrives. Absent at the ends of the list, which is fine —

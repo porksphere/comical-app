@@ -1,16 +1,17 @@
-# History: tap a row (resumes into the reader), back out, then swipe-clear that row. Activity:
-# swipe to reveal actions, tap Mark read, then swipe-clear the same (now single-action) row —
-# asserting the tab badge count drops after Mark read and holds steady after Clear (clearing an
-# already-read row removes it from the feed but doesn't touch the unread count a second time).
+# The Recent tab's two views (recent-switch). History: tap a row (resumes into the reader), back
+# out, then swipe-clear that row. New chapters: swipe to reveal actions, tap Mark read, then
+# swipe-clear the same (now single-action) row — asserting the tab badge count drops after Mark
+# read and holds steady after Clear (clearing an already-read row removes it from the feed but
+# doesn't touch the unread count a second time). Last, a row's hold menu: Mark read from there.
 #
 # Mobile-only (native swipe gesture), matching the existing swipe-dismiss*/README scoping
 # rationale — Maestro's web/Chromium beta isn't a reliable driver for RNGH pan gestures.
 #
 # NOT locally verifiable this session (no Android dev-client / no Mac for iOS — see e2e/README.md
 # and the plan's Ground rules) — the row Y-coordinates below are BEST-EFFORT ESTIMATES, not
-# confirmed against a live run. Both History and Activity's content lists start "flush under the
-# top bar" (see history.tsx / activity.tsx's contentContainerStyle comments), so row 0 is assumed
-# to sit around 18-22% down the screen; treat the first CI run of this flow as its real
+# confirmed against a live run. Both views' lists start "flush under the top bar" (see
+# history-view.tsx / activity-view.tsx's contentContainerStyle comments) with the Recent switch's
+# row (48pt) as their first row, so row 0 is assumed to sit around 25-29% down the screen; treat the first CI run of this flow as its real
 # verification, per the plan's existing precedent for iOS-only-CI-verified flows, extended here to
 # the coordinate estimate itself since neither platform could be locally checked this session.
 #
@@ -54,9 +55,9 @@ appId: com.porksphere.comical
 
 # ── History ──────────────────────────────────────────────────────────────────
 - tapOn:
-    id: "tab.history"
-- assertVisible:
-    id: "screen-title.history"
+    id: "tab.recent"
+- tapOn:
+    id: "recent.switch.history"
 - assertVisible:
     id: "history-row.the-wish"
 
@@ -68,21 +69,21 @@ appId: com.porksphere.comical
 - tapOn:
     id: "reader.toolbar.back"
 - assertVisible:
-    id: "screen-title.history"
+    id: "screen-title.recent"
 
 # Swipe-clear it: single action ("Remove") auto-commits past FULL_SWIPE_COMMIT, no button tap.
 - swipe:
-    start: "90%, 20%"
-    end: "5%, 20%"
+    start: "90%, 27%"
+    end: "5%, 27%"
     duration: 300
 - assertNotVisible:
     id: "history-row.the-wish"
 
-# ── Activity ─────────────────────────────────────────────────────────────────
+# ── New chapters ─────────────────────────────────────────────────────────────
 - tapOn:
-    id: "tab.activity"
+    id: "recent.switch.new"
 - assertVisible:
-    id: "screen-title.activity"
+    id: "screen-title.recent"
 - assertVisible:
     text: "^6$"
 - assertVisible:
@@ -91,8 +92,8 @@ appId: com.porksphere.comical
 # Swipe wide enough to reveal both actions (2-action rows don't auto-commit), then tap Mark read
 # by id rather than guessing its on-screen position.
 - swipe:
-    start: "90%, 20%"
-    end: "10%, 20%"
+    start: "90%, 27%"
+    end: "10%, 27%"
     duration: 300
 - tapOn:
     id: "swipe-action.give-my-regards-to-black-jack.mark-read"
@@ -101,10 +102,19 @@ appId: com.porksphere.comical
 
 # Row is now read/single-action (Clear only) — a wide swipe auto-commits it directly.
 - swipe:
-    start: "90%, 20%"
-    end: "5%, 20%"
+    start: "90%, 27%"
+    end: "5%, 27%"
     duration: 300
 - assertNotVisible:
     id: "history-row.give-my-regards-to-black-jack"
 - assertVisible:
     text: "^5$"
+
+# The row's own actions are in its hold menu too (rowActions in series-card-menu): Mark read on
+# "The Witches of Chaosah" (1 unread chapter) takes the count from 5 to 4.
+- longPressOn:
+    id: "history-row.the-witches-of-chaosah"
+- tapOn:
+    id: "activity-row.menu.mark-read"
+- assertVisible:
+    text: "^4$"

@@ -16,7 +16,7 @@ import { BAR_THUMB_PX, BAR_THUMB_RADIUS, MENU_THUMB_RADIUS, useMenuThumbFiles } 
  * Browse's controls in the iOS navigation bar: ONE leading button, the current bridge's icon as
  * a circle in the bar's glass capsule, opening a system menu of checkmarked rows in two inline
  * sections — the bridges first, under the bridge icon that opened them, then the pages — so any
- * pick is open and tap; the search is the trailing button. They were submenus, which put every
+ * pick is open and tap. Search is the search tab's, so the bar has no button for it. They were submenus, which put every
  * page switch a level down. No custom view stands in the bar, so every item is a standard UIBarButtonItem:
  * UIKit lays the bar out itself (an image item joins the vertical bar of a folded or landscape
  * display) and morphs the leading item into the back button of the series page Browse pushes
@@ -42,7 +42,6 @@ export function BrowseNativeToolbar({
   pages,
   page,
   onSelectPage,
-  onSearch,
 }: {
   bridges: Bridge[];
   thumbnails: Record<string, string>;
@@ -54,7 +53,6 @@ export function BrowseNativeToolbar({
   pages: PageOption[];
   page: string;
   onSelectPage: (key: string) => void;
-  onSearch: () => void;
 }) {
   const circles = useMenuThumbFiles(thumbnails, sources, BAR_THUMB_RADIUS, BAR_THUMB_PX);
   const tiles = useMenuThumbFiles(thumbnails, sources, MENU_THUMB_RADIUS);
@@ -86,28 +84,13 @@ export function BrowseNativeToolbar({
     label: current ? `${current.name}, bridge and page` : 'Bridge and page',
     sections: withBridges ? [bridgeSection, pageSection] : [pageSection],
   };
-  if (leads) {
-    return (
-      <>
-        <NavBarLeadingMenuToolbar {...menu} />
-        <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={onSearch} />
-        </Stack.Toolbar>
-        <NavBarLeadingMenu {...menu} />
-      </>
-    );
-  }
-  // One toolbar: a second trailing toolbar replaces the first's items. The bar lists its trailing
-  // items from the edge in, so the last here is at the edge: the search, with the menu inward of
-  // it. The fixed space, even of no width, is where UIKit splits one placement's shared glass
-  // into two groups: the menu in its own capsule, as an account button is in Apple's bars.
   return (
     <>
-      <Stack.Toolbar placement="right">
-        {navBarLeadingMenuItem(menu)}
-        <Stack.Toolbar.Spacer width={0} />
-        <Stack.Toolbar.Button icon="magnifyingglass" accessibilityLabel="Search" onPress={onSearch} />
-      </Stack.Toolbar>
+      {leads ? (
+        <NavBarLeadingMenuToolbar {...menu} />
+      ) : (
+        <Stack.Toolbar placement="right">{navBarLeadingMenuItem(menu)}</Stack.Toolbar>
+      )}
       <NavBarLeadingMenu {...menu} />
     </>
   );

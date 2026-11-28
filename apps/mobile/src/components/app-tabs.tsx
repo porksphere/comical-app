@@ -1,6 +1,6 @@
 import { usePathname } from 'expo-router';
 import { Tabs, TabList, TabTrigger, TabSlot, TabTriggerSlotProps } from 'expo-router/ui';
-import { Bell, Compass, History, Library, Search, Settings, type LucideIcon } from 'lucide-react-native';
+import { Clock, Compass, Library, Search, Settings, type LucideIcon } from 'lucide-react-native';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
@@ -13,34 +13,44 @@ import {
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppSidebar, SidebarGroup, SidebarItem } from '@/components/app-sidebar';
+import {
+  AppSidebar,
+  type SidebarAction,
+  SidebarGroup,
+  SidebarHeading,
+  SidebarRailItem,
+  SidebarRow,
+} from '@/components/app-sidebar';
 import { SidebarBridges } from '@/components/sidebar-bridges';
 import { SidebarCollections } from '@/components/sidebar-collections';
+import { SidebarRecent } from '@/components/sidebar-recent';
 import { SettingsModal } from '@/components/settings/settings-modal';
 import { BridgeSearchPane } from '@/components/bridge-search-pane';
 import { ResultsPane } from '@/components/results-pane';
 import { SeriesPane } from '@/components/series-pane';
-import { SearchPane, SidebarSearchField } from '@/components/sidebar-search';
+import { SearchPane, ShellSearchField } from '@/components/sidebar-search';
 import { SidebarResizer } from '@/components/sidebar-resizer';
 import { COMICAL_BRIDGE_ID, setSelectedBridge, useSelectedBridge } from '@/data/selected-bridge';
 import { libraryViews, setSelectedCollection, useSelectedCollectionId } from '@/data/selected-collection';
 import { ActivityTabBadge, SettingsTabBadge } from '@/components/tab-badge';
 import { renderFadingTabScreen } from '@/components/tab-slot-fade';
 import { navModeFor } from '@/constants/size-class';
-import { navInsetFor, Spacing } from '@/constants/theme';
+import { GLASS_CONTROL_HEIGHT } from '@/components/glass-surface';
+import { navInsetFor, Spacing, TopLevelGutter, topLevelCenterInset } from '@/constants/theme';
 import { ContentWidthProvider } from '@/hooks/use-content-width';
-import { useSectionOpen, toggleSection } from '@/hooks/use-sidebar-sections';
-import { expandSidebar, SidebarCollapsedWidth, useSidebarCollapsed, useSidebarWidth } from '@/hooks/use-sidebar-width';
+import { recentView, setRecentView, useRecentView, type RecentView } from '@/hooks/use-recent-view';
+import { SidebarRailWidth, useSidebarWidth } from '@/hooks/use-sidebar-width';
 import { useCollections } from '@/hooks/use-collections';
 import { useKeepTabPanes } from '@/hooks/use-keep-tab-panes';
 import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
+import { useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
 import { useWindowSize } from '@/hooks/use-window-size';
 import { setBridgeSearchPaneAvailable, useBridgeSearchPaneOpen } from '@/lib/bridge-search-pane';
 import { closeContentPanes, hasContentPanes, openContentPaneKeys, useOpenContentPaneKeys } from '@/lib/content-panes';
 import { isTypingTarget } from '@/lib/key-hold';
 import { keyActionOf } from '@/lib/keybindings';
-import { TAB_KEY_ACTIONS } from '@/lib/keymap';
+import { TAB_KEY_ACTIONS, type TabKeyAction } from '@/lib/keymap';
 import { router } from '@/lib/nav';
 import { useOpenComicalSearch } from '@/lib/open-search';
 import { scrollToTopFor } from '@/lib/reselect-scroll';
@@ -69,18 +79,16 @@ import {
   tabBarProgress,
 } from '@/lib/tab-bar-slide';
 import { ROOT_TAB_PATHS } from '@/lib/root-tabs';
+import { useWindowControlsInset } from '@/lib/window-controls';
 import { isTabBarPinned, subscribeTabBarPinned } from '@/lib/tab-bar-visibility';
 
-// Android and web: a custom-rendered bar (iOS has the system one — see app-tabs.ios.tsx, which
-// Metro picks there) — responsive: an app-like black icon bottom bar on phones; on wider/desktop
-// viewports a compact icon-only row pinned to the top-right, sitting on the same line as the
-// Browse screen's bridge/page selector bar (so there's no separate nav bar).
+// Android and web: a custom-rendered nav (iOS has the system one — see app-tabs.ios.tsx, which
+// Metro picks there) — an icon bottom bar on phones, the side navigation on wider viewports.
 /** `noRecede`: this tab's rows reorder as you read, and one that re-renders under the scaled
  *  backdrop measures short — see `setBackdropRecede`. */
 /** `Scope`: the group of things this destination can be narrowed to — bridges for Browse,
- *  collections for Library. Rendered in the SIDEBAR ONLY, nested under its own row and only while
- *  that row is the active one. A scope list is meaningless anywhere but the destination it scopes:
- *  shown unconditionally, Bridges sat under Settings offering to re-point a tab you can't see. */
+ *  collections for Library, its two views for Recent. Rendered in the SIDEBAR ONLY, as the rows
+ *  under the destination's own heading. */
 const TABS: {
   name: string;
   href: string;
@@ -94,9 +102,8 @@ const TABS: {
    *  lead with. Without this the row navigated but left whichever bridge or collection you were last
    *  in selected, so the tab you asked for and the scope you got disagreed.
    *
-   *  Rail only: below the breakpoint the same press is a bottom-bar tab, where there is no visible
-   *  scope list and silently re-pointing Browse would be a change with nothing on screen to explain
-   *  it. */
+   *  Labelled sidebar only: anywhere else the same press is a tab with no visible scope list, and
+   *  silently re-pointing Browse would be a change with nothing on screen to explain it. */
   selectDefault?: () => void;
 }[] = [
   // A compass, not a grid: Browse is the discover surface, and `LayoutGrid` both named a layout
@@ -118,8 +125,15 @@ const TABS: {
     Scope: SidebarCollections,
     selectDefault: () => setSelectedCollection(null),
   },
-  { name: 'history', href: ROOT_TAB_PATHS.history, label: 'History', Icon: History, noRecede: true },
-  { name: 'activity', href: ROOT_TAB_PATHS.activity, label: 'Activity', Icon: Bell, noRecede: true },
+  {
+    name: 'recent',
+    href: ROOT_TAB_PATHS.recent,
+    label: 'Recent',
+    Icon: Clock,
+    noRecede: true,
+    Scope: SidebarRecent,
+    selectDefault: () => setRecentView('history'),
+  },
   { name: 'settings', href: ROOT_TAB_PATHS.settings, label: 'Settings', Icon: Settings },
 ];
 
@@ -130,13 +144,14 @@ const TABS: {
 // guarded against was found the hard way. The bar already works at these widths, so the row and the
 // whole reservation mechanism are gone.
 
-/** Web puts Settings in a modal opened from the rail's footer instead of a destination row: it is a
- *  place you go, change one thing and leave, not somewhere you navigate to. Native keeps the tab. */
+/** Web puts Settings in a modal opened from the sidebar's top row: it is a place you go, change one
+ *  thing and leave, not somewhere you navigate to. Native keeps the tab, which the same button
+ *  goes to. */
 const SETTINGS_AS_MODAL = Platform.OS === 'web';
 /** Same gate as the settings modal, and for the same reason: the pane is a web layout, not a wide
  *  one. A landscape iPad shows the rail and still opens a series full-screen — see lib/series-pane. */
 const SERIES_AS_PANE = Platform.OS === 'web';
-/** And search's field moves into the rail, with its results in a pane of their own. */
+/** And search is a field the shell keeps in the bar, with its results in a pane of their own. */
 const SEARCH_IN_RAIL = Platform.OS === 'web';
 
 const SEARCH_HINT =
@@ -351,19 +366,15 @@ export default function AppTabs() {
   // and labelled — but they are one component in one place, which is what the removed in-between
   // layout (the top-right icon row, see the note at its removal below) was not.
   const sidebar = !isMobile;
-  // The rail's width is a preference now, so the ONE number that pads the slot is read rather than
+  // The sidebar's width is a preference, so the ONE number that pads the slot is read rather than
   // assumed. `navInsetFor` takes it as an argument for the same reason it always did: so the
   // breakpoint above can't depend on a value the user can drag.
-  const userCollapsed = useSidebarCollapsed();
   const draggedWidth = useSidebarWidth();
-  // At a regular width that is still short of `SidebarBreakpoint` — a Fold or Duo inner display, a
-  // portrait iPad — the rail is collapsed by LAYOUT, not by the user: a labelled sidebar there would
-  // take a column from a grid that hasn't reached its max width. The user's own collapsed/expanded
-  // preference is untouched underneath it and applies again once the window is wide enough.
-  const collapsed = navMode === 'rail' || userCollapsed;
-  // Collapsed is a STATE, not a width: the dragged width is remembered underneath it, so expanding
-  // comes back to what you set rather than to whatever the collapsed rail happened to be.
-  const railWidth = collapsed ? SidebarCollapsedWidth : draggedWidth;
+  // A regular width still short of `SidebarBreakpoint` — a Fold or Duo inner display, a portrait
+  // iPad — gets the icon rail: a labelled sidebar there would take a column from a grid that hasn't
+  // reached its max width.
+  const rail = navMode === 'rail';
+  const railWidth = rail ? SidebarRailWidth : draggedWidth;
   // ONE number for the space the rail takes: it pads the slot AND it is what the content width has
   // subtracted, so the two cannot disagree about how much room the rail took. Recomputing the
   // provider's value from `navInsetFor(width)` instead would drift for exactly one render —
@@ -381,8 +392,8 @@ export default function AppTabs() {
   }, [paneAvailable]);
   // The rail's edge follows the pointer on the UI thread; the content's inset can't (see
   // `sidebar-drag`), so it is committed at column boundaries instead. At rest the two are the same
-  // number, and this is what keeps them that way — after a release, after a collapse, after a
-  // width restored from storage.
+  // number, and this is what keeps them that way — after a release, after a width restored from
+  // storage.
   useEffect(() => {
     setSidebarDragWidth(railWidth);
   }, [railWidth]);
@@ -419,7 +430,8 @@ export default function AppTabs() {
             mobile={isMobile}
             sidebar={sidebar}
             scope={Boolean(tab.Scope)}
-            compact={collapsed}
+            listsScopes={navMode === 'sidebar'}
+            compact={rail}
             selectDefault={tab.selectDefault}
             Icon={tab.Icon}
             onInteract={reveal}
@@ -429,69 +441,60 @@ export default function AppTabs() {
           </TabButton>
         </TabTrigger>
       )),
-    [isMobile, sidebar, reveal, collapsed],
+    [isMobile, sidebar, reveal, rail, navMode],
   );
 
-  // The rail's children: the same triggers, each followed by its own scope group. Which groups are
-  // OPEN is independent of which tab is active, so more than one shows at once — the group is always
-  // rendered and `SidebarGroup` animates it to zero height when closed. A FLAT array with keys, not
-  // Fragments — `Tabs` walks its children by type and descends through Fragments (see
-  // TAB_REGISTRATION), so a flat list keeps this chrome plainly skippable. The groups are built here
-  // rather than inside `AppSidebar` because only this file knows the tab table they hang off.
-  // Exactly ONE row in the rail is selected at a time, and it belongs to the tab you are on. A scope
+  // Exactly ONE row in the nav is selected at a time, and it belongs to the tab you are on. A scope
   // group whose destination isn't active shows its rows unhighlighted: the bridge it lists is still
   // the one Browse would show, but Browse isn't what you're looking at, so claiming it as the current
   // selection puts two (or three) filled rows on screen at once. Exact pathname match, no fallback —
-  // on a pushed screen over the tabs nothing in the rail is current.
+  // on a pushed screen over the tabs nothing in the nav is current.
   const activeTab = TABS.find((t) => t.href === pathname)?.name;
   const openSearch = useOpenComicalSearch();
-  // The rail's field only where it is drawn: collapsed it is an icon that expands the rail to reach
-  // it, and over a pushed screen (a reader, Settings on native) the rail is covered, so the shortcut
-  // opens the screen.
-  const searchCapable = SEARCH_IN_RAIL && sidebar;
-  const railSearch = searchCapable && !collapsed;
+  // The shell's field only where it is drawn: over a pushed screen (a reader, Settings on native)
+  // the tabs are covered, so the shortcut opens the screen.
+  const railSearch = SEARCH_IN_RAIL && sidebar;
+  // Where a tab's own bar ends its row (`TabTitleBar`): capped to the content column and clear of
+  // the window's caption buttons. The field stands there, on the bar's centre line.
+  const barHeight = useTopBarHeight();
+  const captionInset = useWindowControlsInset();
+  const centreInset = topLevelCenterInset(width - contentInset);
+  const searchFieldStyle = {
+    top: insets.top + (barHeight - GLASS_CONTROL_HEIGHT) / 2,
+    right: Math.max(centreInset, captionInset) + TopLevelGutter,
+  };
   useEffect(() => {
     if (!railSearch) clearSidebarSearches();
   }, [railSearch]);
-  const revealSearchField = useCallback(() => {
-    closeSettingsModal();
-    expandSidebar();
-    focusSidebarSearch();
-  }, []);
   useKeyboardShortcut('search', () => {
-    if (!searchCapable || !activeTab) return openSearch();
-    revealSearchField();
+    if (!railSearch || !activeTab) return openSearch();
+    closeSettingsModal();
+    focusSidebarSearch();
   });
-  const sidebarChildren = useMemo(
-    () => [
-      // First, and not a tab: Search searches every bridge, wherever you are, so it is never the
-      // selected row. Expanded it is a field whose results cover the content region beside it (see
-      // lib/sidebar-search); collapsed, an icon that expands the rail onto that field.
-      railSearch ? (
-        <SidebarSearchField key="search" hint={SEARCH_HINT} />
-      ) : (
-        <SidebarItem
+  const sidebarChildren = useMemo(() => {
+    const row = (name: string) => triggers[TABS.findIndex((tab) => tab.name === name)];
+    if (rail) {
+      return [
+        <SidebarRailItem
           key="search"
           testID="sidebar.search"
           Icon={Search}
           label="Search"
-          hint={collapsed ? undefined : SEARCH_HINT}
-          compact={collapsed}
           accessibilityRole="button"
-          onPress={searchCapable ? revealSearchField : openSearch}
-        />
-      ),
-      ...TABS.flatMap((tab, i) => {
-        // Settings is a footer BUTTON in the rail on web (it opens a modal, it isn't a place), so its
-        // row is dropped here. The registration TabList below still lists it — the route has to keep
-        // existing, and on native it is still an ordinary destination.
-        if (SETTINGS_AS_MODAL && tab.name === 'settings') return [];
-        const row = triggers[i];
-        // Collapsed, there is no label for a group to sit under and collections have no icon of their
-        // own, so the rail shows destinations only.
-        if (!tab.Scope || collapsed) return [row];
+          onPress={openSearch}
+        />,
+        ...triggers,
+      ];
+    }
+    // A FLAT array with keys, not Fragments, built here rather than inside `AppSidebar` because only
+    // this file knows the tab table the groups hang off. Which groups are OPEN is independent of
+    // which tab is active, so more than one shows at once — a group is always rendered and
+    // `SidebarGroup` animates it to zero height when closed.
+    return [
+      ...TABS.flatMap((tab) => {
+        if (!tab.Scope) return [];
         return [
-          row,
+          row(tab.name),
           <SidebarGroup key={`${tab.name}-scope`} name={tab.name} testID={`sidebar.group.${tab.name}`}>
             {/* Each scope keeps its own panes (lib/pane-tab), so picking ANOTHER bridge or collection
                 swaps what is over the content region rather than closing it. Picking the one you are
@@ -500,9 +503,30 @@ export default function AppTabs() {
           </SidebarGroup>,
         ];
       }),
-    ],
-    [triggers, activeTab, collapsed, openSearch, railSearch, searchCapable, revealSearchField],
-  );
+    ];
+  }, [triggers, activeTab, rail, openSearch]);
+
+  const sidebarActions: SidebarAction[] = [
+    // The web's search is the shell's field in the bar; a device opens the Search screen from here.
+    ...(SEARCH_IN_RAIL
+      ? []
+      : [
+          {
+            testID: 'sidebar.search',
+            label: 'Search',
+            onPress: openSearch,
+            icon: <Search size={16} color={theme.textSecondary} />,
+          },
+        ]),
+    {
+      testID: SETTINGS_AS_MODAL ? 'sidebar.settings' : 'tab.settings',
+      label: 'Settings',
+      active: activeTab === 'settings',
+      onPress: SETTINGS_AS_MODAL ? openSettingsModal : () => router.navigate(ROOT_TAB_PATHS.settings as never),
+      icon: <Settings size={16} color={theme.textSecondary} />,
+      badge: <SettingsTabBadge />,
+    },
+  ];
 
   // The rail's own width, read straight off the shared value so a drag moves it without a render.
   const railStyle = useAnimatedStyle(() => ({ width: sidebarDragWidth.value }));
@@ -522,7 +546,7 @@ export default function AppTabs() {
           putting it between `Tabs` and `TabSlot` would still break the child-type discovery the
           slot and the registration TabList both depend on. The stack screens that cover the rail
           (search, results, series, settings/*) are not in this subtree and keep the window. */}
-      <ContentWidthProvider width={width - contentInset} sidebar={sidebar}>
+      <ContentWidthProvider width={width - contentInset} sidebar={sidebar} tabRoot listsScopes={navMode === 'sidebar'}>
         <Tabs style={styles.tabs}>
           {/* Expo's slot, with our own screen renderer so an arriving tab fades in rather than
               appearing in one frame — see `tab-slot-fade`. */}
@@ -536,28 +560,13 @@ export default function AppTabs() {
               The margin moves the frame, which every layout honours. */}
           <TabSlot style={[styles.slot, { marginLeft: contentInset }]} renderFn={renderFadingTabScreen} />
 
-          {/* Wide: a labelled sidebar, in place of the top row — not alongside it. */}
           {sidebar && (
             <Animated.View style={[styles.sidebarWrap, railStyle]}>
-              <AppSidebar
-                top={insets.top}
-                collapsed={collapsed}
-                collapsible={navMode === 'sidebar'}
-                settingsButton={
-                  SETTINGS_AS_MODAL
-                    ? {
-                        testID: 'sidebar.settings',
-                        label: 'Settings',
-                        onPress: openSettingsModal,
-                        icon: <Settings size={20} color={theme.textSecondary} />,
-                        badge: <SettingsTabBadge />,
-                      }
-                    : undefined
-                }>
+              <AppSidebar top={insets.top} rail={rail} actions={rail ? undefined : sidebarActions}>
                 {sidebarChildren}
               </AppSidebar>
-              {/* Nothing to drag on an icon rail — its width is the state, not a preference. */}
-              {collapsed ? null : <SidebarResizer width={railWidth} viewport={width} />}
+              {/* Nothing to drag on an icon rail: its width is the layout's. */}
+              {rail ? null : <SidebarResizer width={railWidth} viewport={width} />}
             </Animated.View>
           )}
 
@@ -616,6 +625,7 @@ export default function AppTabs() {
       {paneAvailable ? (
         <AllTabPanes railSearch={railSearch} left={contentInset} width={width - contentInset} top={insets.top} />
       ) : null}
+      {railSearch ? <ShellSearchField hint={SEARCH_HINT} shown={!!activeTab} style={searchFieldStyle} /> : null}
       <PaneKeySync activeTab={activeTab} />
       {SETTINGS_AS_MODAL ? <SettingsModal /> : null}
       <TabKeys activeTab={activeTab} />
@@ -625,10 +635,21 @@ export default function AppTabs() {
   );
 }
 
+/** What each digit key goes to: a tab, and for Recent, which of its views — the keys kept their
+ *  names and bindings from when History and New chapters were tabs of their own. */
+const TAB_KEY_TARGETS: Record<TabKeyAction, { tab: string; view?: RecentView }> = {
+  'tab-browse': { tab: 'browse' },
+  'tab-library': { tab: 'library' },
+  'tab-history': { tab: 'recent', view: 'history' },
+  'tab-activity': { tab: 'recent', view: 'new' },
+  'tab-settings': { tab: 'settings' },
+};
+
 /** 1–5: the destinations in the rail's order. On the destination already showing, its key steps
  *  through its scope instead — Browse's bridges, Library's collections — so the digits reach every
  *  row the rail lists, which the arrows don't (lib/focus-nav skips the rail). Arriving from elsewhere
- *  lands on the scope's first row, the way a press of the rail's destination row does. */
+ *  lands on the scope's first row, the way a press of the rail's destination row does. Recent's
+ *  views have a key each, so those go straight to the view. */
 function TabKeys({ activeTab }: { activeTab: string | undefined }) {
   const { visibleBridges, bridgeId } = useSelectedBridge();
   const { collections } = useCollections();
@@ -649,18 +670,20 @@ function TabKeys({ activeTab }: { activeTab: string | undefined }) {
       if (!action) return;
       e.preventDefault();
       if (e.repeat) return;
-      const tab = TABS[TAB_KEY_ACTIONS.indexOf(action)];
-      if (SETTINGS_AS_MODAL && tab.name === 'settings') return openSettingsModal();
+      const { tab: name, view } = TAB_KEY_TARGETS[action];
+      const tab = TABS.find((t) => t.name === name)!;
+      if (SETTINGS_AS_MODAL && name === 'settings') return openSettingsModal();
       const { activeTab, steps } = at.current;
-      const step = activeTab === tab.name ? steps[tab.name] : undefined;
+      const step = activeTab === name && !view ? steps[name] : undefined;
       if (step) return step();
       closeSettingsModal();
-      if (activeTab === tab.name) {
+      if (activeTab === name && (!view || view === recentView())) {
         closeContentPanes();
-        return scrollToTopFor(tab.name);
+        return scrollToTopFor(name);
       }
+      if (view) setRecentView(view);
       // Arriving where you left something open is coming back to it, as the rail's press is.
-      if (!hasContentPanes(paneKeyOf(tab.name))) tab.selectDefault?.();
+      else if (!hasContentPanes(paneKeyOf(name))) tab.selectDefault?.();
       router.navigate(tab.href as never);
     };
     document.addEventListener('keydown', onKey);
@@ -701,7 +724,8 @@ function PaneKeySync({ activeTab }: { activeTab: string | undefined }) {
   const { collections, isLoading: collectionsLoading } = useCollections();
   const collection = useSelectedCollectionId();
   const keepTabPanes = useKeepTabPanes();
-  const scopes: Record<string, string | undefined> = { browse: bridgeId, library: collection ?? 'all' };
+  const view = useRecentView();
+  const scopes: Record<string, string | undefined> = { browse: bridgeId, library: collection ?? 'all', recent: view };
   const activeKey = activeTab ? paneKey(activeTab, scopes[activeTab]) : undefined;
   useLayoutEffect(() => {
     setTabPaneKeys(Object.fromEntries(TABS.map((tab) => [tab.name, paneKey(tab.name, scopes[tab.name])])));
@@ -779,6 +803,7 @@ function TabButton({
   mobile,
   sidebar,
   scope,
+  listsScopes,
   compact,
   selectDefault,
   Icon,
@@ -791,6 +816,7 @@ function TabButton({
   mobile?: boolean;
   sidebar?: boolean;
   scope?: boolean;
+  listsScopes?: boolean;
   compact?: boolean;
   selectDefault?: () => void;
   Icon: LucideIcon;
@@ -799,7 +825,6 @@ function TabButton({
   noRecede?: boolean;
 }) {
   const theme = useTheme();
-  const sectionOpen = useSectionOpen(routeName);
 
   // Only the ARRIVING tab writes, so the two buttons that re-render on a switch can't race. The
   // series page opens as a sibling of the whole tab navigator, which blurs it without changing
@@ -817,8 +842,8 @@ function TabButton({
     // had open, scope and all, and leaves the one you were on waiting. Pressing the tab you are on
     // is going to its front door: its panes close.
     const returning = !isFocused && hasContentPanes(paneKeyOf(routeName));
-    // Only where the rail is showing the scope this resets — see `selectDefault` on the tab table.
-    if (sidebar && !returning) selectDefault?.();
+    // Only where the sidebar is showing the scope this resets — see `selectDefault` on the tab table.
+    if (listsScopes && !returning) selectDefault?.();
     if (isFocused) closeContentPanes();
     onPress?.(e);
   };
@@ -838,37 +863,48 @@ function TabButton({
         style={styles.bottomButton}>
         <View style={styles.iconWrap}>
           <Icon size={22} color={color} strokeWidth={2} />
-          {routeName === 'activity' && <ActivityTabBadge />}
+          {routeName === 'recent' && <ActivityTabBadge />}
           {routeName === 'settings' && <SettingsTabBadge />}
         </View>
       </Pressable>
     );
   }
 
-  // Wide: the same trigger, drawn as a labelled row. The badges are passed through rather than
-  // rebuilt so Activity/Settings keep the one implementation.
-  if (sidebar) {
+  const label = typeof children === 'string' ? children : routeName;
+  if (sidebar && compact) {
     return (
-      <SidebarItem
+      <SidebarRailItem
         {...props}
         testID={`tab.${routeName}`}
         Icon={Icon}
-        label={typeof children === 'string' ? children : routeName}
+        label={label}
         active={isFocused}
-        scope={scope}
-        compact={compact}
-        expanded={sectionOpen}
-        onToggleScope={() => toggleSection(routeName)}
         badge={
-          routeName === 'activity' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
+          routeName === 'recent' ? <ActivityTabBadge /> : routeName === 'settings' ? <SettingsTabBadge /> : undefined
         }
         onPress={handlePress}
       />
     );
   }
 
-  // Unreachable: `mobile` and `sidebar` now cover every width between them, so the icon-only desktop
-  // form that used to live here went with the top-right row.
+  // The sidebar: a destination with a scope is the heading over that scope's rows, which carry the
+  // selection (there is always a current bridge, always a current collection); one without is a row.
+  if (sidebar && scope) {
+    return <SidebarHeading {...props} testID={`tab.${routeName}`} label={label} section={routeName} onPress={handlePress} />;
+  }
+  if (sidebar) {
+    return (
+      <SidebarRow
+        {...props}
+        testID={`tab.${routeName}`}
+        label={label}
+        active={isFocused}
+        leading={<Icon size={16} color={theme.text} />}
+        onPress={handlePress}
+      />
+    );
+  }
+
   return null;
 }
 

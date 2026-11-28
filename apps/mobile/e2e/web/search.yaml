@@ -1,13 +1,12 @@
 # Same journey as ../mobile/search.yaml, kept in sync by hand. Three selectors hit the web-only
 # aria-label quirk (see ../README.md):
 #   - tab bar: select "Browse", not tab.browse (same as smoke.yaml).
-#   - search entry: both the narrow-layout icon (`browse.search-icon`) and the wide-layout pill
-#     (`browse.search-pill`, app/(tabs)/index.tsx — Maestro's web/Chromium viewport renders the
-#     wide layout) share the same accessibilityLabel="Search", so one selector covers either.
-#     The rail's own search field is labelled "Search all bridges" so it can't take this tap — see
-#     sidebar-search.yaml.
-#   - at the rail's widths Search opens in a pane beside the rail (`bridge-search.pane`,
-#     lib/bridge-search-pane) rather than as a route; the screen and its testIDs are the same.
+#   - search entry: Maestro's web/Chromium viewport renders the wide layout, where the bar's field
+#     is the shell's search across every bridge (sidebar-search.yaml). A bridge's own Search screen,
+#     this flow's, opens from the bar's filter button once a bridge is picked in the sidebar
+#     (`browse.bridge-search`, accessibilityLabel="Search <bridge> with filters").
+#   - Search opens in a pane beside the sidebar (`bridge-search.pane`, lib/bridge-search-pane)
+#     rather than as a route; the screen and its testIDs are the same.
 #   - clear button: `search.field.clear` sets accessibilityLabel="Clear search"
 #     (components/search-field.tsx) — select by that label text instead of the testID.
 # `search.field.input` has no competing accessibilityLabel — same selector as mobile.
@@ -19,7 +18,9 @@ url: http://localhost:4000/comical-app
     id: "Browse"
 
 - tapOn:
-    id: "Search"
+    id: "sidebar.bridge.komga"
+- tapOn:
+    id: "Search Komga with filters"
 
 - extendedWaitUntil:
     visible:
