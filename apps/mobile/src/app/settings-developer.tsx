@@ -16,7 +16,14 @@ import {
   useSeriesStickerRead,
   type HomeHeroStyle,
 } from '@/hooks/use-home-bookshelf';
-import { setSearchBarTrial, useSearchBarTrial, type SearchBarTrial } from '@/hooks/use-search-bar-trial';
+import {
+  setSearchBarTrial,
+  setSearchTitleTrial,
+  useSearchBarTrial,
+  useSearchTitleTrial,
+  type SearchBarTrial,
+  type SearchTitleTrial,
+} from '@/hooks/use-search-bar-trial';
 import { devProfiler$, useDevProfilerEnabled } from '@/lib/dev-profiler-flag';
 
 const HERO_STYLES = [
@@ -26,9 +33,14 @@ const HERO_STYLES = [
 ] as const;
 
 const SEARCH_BARS = [
-  { value: 'hides', label: 'Hides, buttons under the field' },
+  { value: 'hides', label: 'Hides' },
   { value: 'titled', label: 'Stays, titled' },
   { value: 'kept', label: 'Stays, buttons only' },
+] as const;
+
+const SEARCH_TITLES = [
+  { value: 'inline', label: 'In the bar' },
+  { value: 'always', label: 'Under the bar' },
 ] as const;
 
 /** Dev-build-only: lets local development iterate against mock data without a running backend, and
@@ -44,6 +56,7 @@ export default function DeveloperSettingsScreen() {
   const stickerRead = useSeriesStickerRead();
   const heroStyle = useHomeHeroStyle();
   const searchBar = useSearchBarTrial();
+  const searchTitle = useSearchTitleTrial();
 
   const sections: SettingsFormSection[] = [
     {
@@ -83,11 +96,20 @@ export default function DeveloperSettingsScreen() {
         select<SearchBarTrial>({
           label: 'Search tab bar while searching',
           description:
-            'A trial, iOS only. What the Search tab’s bar does while its field is in use: goes, as the App Store’s does, with the source, filters and sort in a row under the field; stays with a small “Search” in it; or stays with only its buttons.',
+            'A trial, iOS only. What the Search tab’s bar does while its field is in use: goes, as the App Store’s does; stays with a small “Search” in it; or stays with only its buttons.',
           value: searchBar,
           options: SEARCH_BARS,
           onChange: setSearchBarTrial,
           testID: 'settings.developer.search-bar',
+        }),
+        select<SearchTitleTrial>({
+          label: 'Search tab title',
+          description:
+            'A trial, iOS only. Where the Search tab’s large title stands: on the bar’s own row beside its buttons, as every other tab’s does, or on a row of its own under them that shrinks into the bar as you scroll.',
+          value: searchTitle,
+          options: SEARCH_TITLES,
+          onChange: setSearchTitleTrial,
+          testID: 'settings.developer.search-title',
         }),
         {
           kind: 'toggle',

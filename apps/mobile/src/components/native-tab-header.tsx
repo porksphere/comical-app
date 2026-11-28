@@ -52,7 +52,7 @@ export function NativeTabHeader({
   title: string;
   filter?: TabFilter;
   placeholder?: string;
-  /** `always` for the search tab, whose field is stacked under a title that collapses on scroll. */
+  /** `always`, a row of its own under the items that collapses on scroll: the search tab's trial. */
   largeTitle?: 'inline' | 'always';
   /** Set for the search tab, whose large title is then set apart from the bar's small one, shown
    *  only while this is true: the large title scrolls with the page, and with the bar kept through

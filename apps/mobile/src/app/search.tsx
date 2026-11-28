@@ -23,7 +23,6 @@ import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { NativeTabHeader } from '@/components/native-tab-header';
 import { NavBarLeadingMenu, navBarLeadingMenuItem } from '@/components/nav-bar-leading-menu';
-import { SearchScopeRow } from '@/components/search-scope-row';
 import { useSearchSourceMenu } from '@/components/search-source-menu';
 import { SearchSources } from '@/components/search-sources';
 import { ThemedText } from '@/components/themed-text';
@@ -51,7 +50,7 @@ import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
 import { useOpenLink } from '@/hooks/use-open-link';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
-import { useSearchBarTrial } from '@/hooks/use-search-bar-trial';
+import { useSearchBarTrial, useSearchTitleTrial } from '@/hooks/use-search-bar-trial';
 import { useSlidingBar } from '@/hooks/use-sliding-bar';
 import { useIsDesktop, useTopBarHeight } from '@/hooks/use-responsive';
 import { useTheme } from '@/hooks/use-theme';
@@ -616,9 +615,10 @@ export default function SearchScreen({
   // The search tab is Apple's standard search tab, the App Store's and TV's: a landing page (the
   // sources) under the large title, with the field stacked under it at the top and the keyboard
   // only on a tap (the trigger's `disableAutomaticSearchActivation`, which also keeps the tab in
-  // the bar with the others on iOS 27). Its large title is the standard one that collapses into
-  // the bar on scroll, the one a stacked field hangs off; the tabs' `inline` one has no row for it.
-  // The scope menu leads the items.
+  // the bar with the others on iOS 27). Its large title is the tabs' `inline` one, on the bar's own
+  // row beside the items, as the App Store's is; the standard one, on a row of its own under the
+  // items, stood under the bar where no other tab's does, and stays as a trial (Settings →
+  // Developer). The scope menu leads the items.
   const sources = visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID);
   const sourceMenu = useSearchSourceMenu({
     enabled: tab && nativeBar,
@@ -632,30 +632,16 @@ export default function SearchScreen({
     setQuery('');
   };
   // Whether the field is in use: from its first focus to its ✕, the system's own active search,
-  // which outlasts the keyboard. While it is, the bar goes (`hides`, the system's default) and its
-  // items come down into a row under the field, or it stays, titled or not (Settings → Developer).
+  // which outlasts the keyboard. While it is, the bar goes (`hides`, the system's default; its items
+  // stay where UIKit keeps them) or stays, titled or not (Settings → Developer).
   const barTrial = useSearchBarTrial();
+  const titleTrial = useSearchTitleTrial();
   const [searching, setSearching] = useState(false);
   const barHides = tab && barTrial === 'hides';
-  const scopeRow =
-    barHides && searching && !(isComical && !typedTerm) ? (
-      <SearchScopeRow
-        scopes={[{ id: COMICAL_BRIDGE_ID, name: 'Everything' }, ...sources]}
-        thumbnails={bridgeThumbnails}
-        selected={currentBridge && !isComical ? currentBridge.id : COMICAL_BRIDGE_ID}
-        onSelect={setBridge}
-        filters={hasFilters ? { count: activeFilterCount, onPress: openFilters } : undefined}
-        sort={
-          sortOptions.length > 0
-            ? { options: sortOptions, current: currentSortKey, onSelect: (key) => setSortValue({ key, ascending: true }) }
-            : undefined
-        }
-      />
-    ) : null;
   const nativeItems = nativeBar ? (
     <>
       {tab ? (
-        <NativeTabHeader title="Search" largeTitle="always" barTitle={barTrial === 'titled' && searching} />
+        <NativeTabHeader title="Search" largeTitle={titleTrial} barTitle={barTrial === 'titled' && searching} />
       ) : (
         <Stack.Screen options={{ title: '' }} />
       )}
@@ -664,8 +650,8 @@ export default function SearchScreen({
         placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
         placement={tab ? 'stacked' : 'integratedCentered'}
         hideWhenScrolling={false}
-        // The system's default on the tab, its items coming down under the field (`scopeRow`). Held
-        // through a search elsewhere, since a pushed search's bar holds its back button.
+        // The system's default on the tab. Held through a search elsewhere, since a pushed search's
+        // bar holds its back button.
         hideNavigationBar={barHides}
         obscureBackground={false}
         autoCapitalize="none"
@@ -868,7 +854,7 @@ export default function SearchScreen({
                 rows={comicalRows}
                 scopeKey={searched || 'blank'}
                 listRef={listRef}
-                header={scopeRow ? <>{scopeRow}{comicalHint}</> : comicalHint}
+                header={comicalHint}
                 paddingTop={listTop}
                 paddingBottom={listBottom}
                 sharedValues={sharedValues}
@@ -886,7 +872,7 @@ export default function SearchScreen({
                 items={gridItems}
                 scopeKey={scopeKey}
                 listRef={listRef}
-                header={scopeRow ? <>{scopeRow}{emptyBody}</> : emptyBody}
+                header={emptyBody}
                 // The top bar OVERLAYS the list (results scroll behind it), so reserve it as well
                 // as the filter bar beneath it, plus a little breathing room.
                 paddingTop={listTop}
