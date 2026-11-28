@@ -14,7 +14,9 @@ export function RecentSwitch() {
   const unread = useActivityBadgeCount();
   return (
     <View style={styles.row}>
-      <Host colorScheme={scheme} style={styles.host}>
+      {/* `ignoreSafeArea`: SwiftUI keeps its content out of the safe area, which moves as the bar
+          slides away, so the control slid within its row while the list scrolled under it. */}
+      <Host colorScheme={scheme} style={styles.host} ignoreSafeArea="all">
         <Picker
           selection={view}
           onSelectionChange={(v) => {
