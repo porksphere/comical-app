@@ -2,6 +2,8 @@ import { observable } from '@legendapp/state';
 import { use$ } from '@legendapp/state/react';
 import { StyleSheet } from 'react-native';
 
+import { logDiagnostic } from '@/lib/diagnostics';
+
 import { VerticalBarEdgeProbe, type VerticalBarEdge } from '../../modules/vertical-bar-edge';
 
 const edge$ = observable<VerticalBarEdge | undefined>(undefined);
@@ -19,7 +21,17 @@ export function useBarsVertical(): boolean | undefined {
 /** The probe, in a screen whose bar the answer is for. */
 export function VerticalBarEdgeReporter() {
   if (!VerticalBarEdgeProbe) return null;
-  return <VerticalBarEdgeProbe style={styles.pin} pointerEvents="none" onEdge={(e) => edge$.set(e.nativeEvent.edge)} />;
+  return (
+    <VerticalBarEdgeProbe
+      style={styles.pin}
+      pointerEvents="none"
+      onEdge={(e) => {
+        // Temporary, beside the search bar's own line: whether the bar hiding changes this.
+        logDiagnostic('bar-edge', e.nativeEvent.edge);
+        edge$.set(e.nativeEvent.edge);
+      }}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

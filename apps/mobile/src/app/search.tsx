@@ -38,6 +38,7 @@ import { clearSearchIntent, peekSearchIntent, subscribeSearchIntent, takeSearchI
 import { COMICAL_BRIDGE_ID, isComicalBridge, useInheritedBridge } from '@/data/selected-bridge';
 import { useDataSource, useMockActive } from '@/data/source';
 import type { Bridge } from '@/data/types';
+import { logDiagnostic } from '@/lib/diagnostics';
 import { friendlyError } from '@/lib/friendly-error';
 import { useBridgeFilters } from '@/hooks/use-bridge-filters';
 import { useBridgeMap } from '@/hooks/use-bridges';
@@ -635,11 +636,15 @@ export default function SearchScreen({
   // which outlasts the keyboard. While it is, the bar goes where its items stand in a side column,
   // which stays when the bar goes, and stays, titled, where it runs along the top: gone, it took
   // the source, filters and sort with it, and no scroll brings it back during a search. The other
-  // ways are trials (Settings → Developer).
+  // ways are trials (Settings → Developer). Where the bar runs is read once, as the search begins,
+  // and held to its end: the bar hiding changes what UIKit says of it, and read live the bar came
+  // back over a side column the moment it had gone.
   const barTrial = useSearchBarTrial();
   const titleTrial = useSearchTitleTrial();
-  const barAlongTop = useMenuLeads();
+  const menuLeads = useMenuLeads();
   const [searching, setSearching] = useState(false);
+  const [searchAlongTop, setSearchAlongTop] = useState<boolean | null>(null);
+  const barAlongTop = searchAlongTop ?? menuLeads;
   const barHides = tab && (barTrial === 'hides' || (barTrial === 'auto' && !barAlongTop));
   const barTitled = barTrial === 'titled' || (barTrial === 'auto' && barAlongTop);
   const nativeItems = nativeBar ? (
@@ -661,9 +666,15 @@ export default function SearchScreen({
         autoCapitalize="none"
         onChangeText={(e) => setTyped(e.nativeEvent.text)}
         onSearchButtonPress={(e) => submit(e.nativeEvent.text)}
-        onFocus={() => setSearching(true)}
+        onFocus={() => {
+          if (searching) return;
+          setSearching(true);
+          setSearchAlongTop(menuLeads);
+          if (tab) logDiagnostic('search-bar', `begin trial=${barTrial} alongTop=${menuLeads} hides=${barTrial === 'hides' || (barTrial === 'auto' && !menuLeads)}`);
+        }}
         onCancelButtonPress={() => {
           setSearching(false);
+          setSearchAlongTop(null);
           if (tab) clear();
           else goBack();
         }}
