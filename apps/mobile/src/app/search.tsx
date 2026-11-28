@@ -598,8 +598,12 @@ export default function SearchScreen({
   // scroll, with the system's search dimming off, since the results under the field are the thing
   // being typed at. The route has no title: the field IS the bar's middle, on the chevron's row,
   // and a "Search" over it only said what the field already shows.
-  // The search tab's bar is every tab's (`NativeTabHeader`, the large title included), with the
-  // scope menu ahead of the items, and its field is the tab bar's.
+  // The search tab is Apple's standard search tab, the App Store's and TV's: a landing page (the
+  // sources) under the large title, with the field stacked under it at the top and the keyboard
+  // only on a tap (the trigger's `disableAutomaticSearchActivation`, which also keeps the tab in
+  // the bar with the others on iOS 27). Its large title is the standard one that collapses into
+  // the bar on scroll, the one a stacked field hangs off; the tabs' `inline` one has no row for it.
+  // The scope menu leads the items.
   const sources = visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID);
   const clear = () => {
     setTyped('');
@@ -607,13 +611,11 @@ export default function SearchScreen({
   };
   const nativeItems = nativeBar ? (
     <>
-      {tab ? <NativeTabHeader title="Search" /> : <Stack.Screen options={{ title: '' }} />}
+      {tab ? <NativeTabHeader title="Search" largeTitle="always" /> : <Stack.Screen options={{ title: '' }} />}
       <Stack.SearchBar
         ref={searchBarRef}
         placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
-        placement={tab ? 'automatic' : 'integratedCentered'}
-        // The search tab sets both too. Left to the system there, `hideWhenScrolling` took the large
-        // title off the bar altogether and `hideNavigationBar` hid the bar while the field was in use.
+        placement={tab ? 'stacked' : 'integratedCentered'}
         hideWhenScrolling={false}
         hideNavigationBar={false}
         obscureBackground={false}

@@ -98,11 +98,16 @@ triggers are named by ROUTE (`(home)`, `library`, …); the custom shell's `TABS
 (`browse`, …), and `app-tabs.ios.tsx` maps between the two for scroll-to-top. There are four tabs,
 Browse, Library, Recent and Settings, and the system's search tab (`role="search"`, route `find`:
 a tab directory named `search` would capture every push of the root `/search` from inside the
-tabs), which iOS 26 stands apart at the bar's end with its field in the bar. That tab is the
+tabs). It is Apple's STANDARD search tab, the App Store's and TV's (WWDC26's "Search" session): a
+landing page under a large "Search" with the field stacked under it at the top, the keyboard only
+on a tap (`disableAutomaticSearchActivation`, which on iOS 27 also keeps the tab in the bar with
+the others). The prominent kind, apart at the bar's end with the keyboard up as it opens, was the
+first cut, and under it the tab's inline large title collapsed on scroll. Its large title is the
+standard one that collapses into the bar (`NativeTabHeader`'s `largeTitle="always"`): a stacked
+field hangs off that title's own row, which the tabs' `inline` title doesn't have. That tab is the
 Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
-filters), and before anything is typed it lists the sources (`SearchSources`). Its bar is every
-tab's (`NativeTabHeader`), and its list's bottom inset follows the keyboard, which stays up under
-it (`keyboardInsets`). It is where iOS finds things: Browse has no search button, and
+filters), and before anything is typed it lists the sources (`SearchSources`). Its list's bottom
+inset follows the keyboard (`keyboardInsets`). It is where iOS finds things: Browse has no search button, and
 Library's and Recent's magnifiers only narrow what the tab shows (`NativeTabHeader`'s filter; a
 pull-down field under the title was tried and fought the `inline` title). The Search screen, every mode, matches your library almost as you
 type and asks the sources once typing pauses (`SOURCES_DELAY_MS`, two letters at least) or at

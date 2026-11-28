@@ -42,7 +42,18 @@ import { NavBarLargeTitle } from '../../modules/nav-bar-large-title';
  *  tab's inline large title collapses on scroll where no other tab's does. Off once that is known. */
 const REPORT_BAR_TITLE = true;
 
-export function NativeTabHeader({ title, filter, placeholder }: { title: string; filter?: TabFilter; placeholder?: string }) {
+export function NativeTabHeader({
+  title,
+  filter,
+  placeholder,
+  largeTitle = 'inline',
+}: {
+  title: string;
+  filter?: TabFilter;
+  placeholder?: string;
+  /** `always` for the search tab, whose field is stacked under a title that collapses on scroll. */
+  largeTitle?: 'inline' | 'always';
+}) {
   // The tab's name in the title typeface (lib/title-font), once it has loaded.
   const titleFont = useTitleFont();
   return (
@@ -66,7 +77,7 @@ export function NativeTabHeader({ title, filter, placeholder }: { title: string;
       ) : null}
       {NavBarLargeTitle ? (
         <NavBarLargeTitle
-          mode="inline"
+          mode={largeTitle}
           report={REPORT_BAR_TITLE}
           onReport={(e) => logDiagnostic('nav-bar-title', e.nativeEvent.message)}
           style={styles.pin}

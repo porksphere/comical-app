@@ -34,9 +34,12 @@ import { setBackdropRecede } from '@/lib/series-backdrop';
  * Route NAMES (`(home)`, `library`, …) are the trigger names; the TABS table in `app-tabs.tsx` keys
  * everything else by the tab's own name (`browse`, …), so the two are mapped here once.
  *
- * Four tabs and the system's search tab (`role="search"`), which iOS 26 stands apart at the bar's
- * trailing end and opens with its field in the bar: History and New chapters share the Recent tab
- * (`use-recent-view`) so that Settings keeps a tab of its own beside it. The search tab's route is
+ * Four tabs and the system's search tab (`role="search"`), Apple's standard kind, the App Store's
+ * and TV's: it opens a landing page with the field at the top and raises the keyboard only on a tap
+ * (`disableAutomaticSearchActivation`), and on iOS 27 stands in the bar with the others. (The
+ * prominent kind, apart at the bar's end with the keyboard up as it opens, was the first cut: there
+ * the tabs' inline large title collapsed on scroll.) History and New chapters share
+ * the Recent tab (`use-recent-view`) so that Settings keeps a tab of its own beside it. The search tab's route is
  * `find`, not `search`: a tab directory named `search` would capture every push of the root
  * `/search` page made from inside the tabs (see `tab-stack`).
  *
@@ -132,7 +135,12 @@ export default function AppTabs() {
           <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
           {settingsBadge > 0 ? <NativeTabs.Trigger.Badge>{String(settingsBadge)}</NativeTabs.Trigger.Badge> : null}
         </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="find" role="search" disableAutomaticContentInsets unstable_nativeProps={measured}>
+        <NativeTabs.Trigger
+          name="find"
+          role="search"
+          disableAutomaticSearchActivation
+          disableAutomaticContentInsets
+          unstable_nativeProps={measured}>
           <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
       </NativeTabs>
