@@ -106,7 +106,9 @@ first cut, and under it the tab's inline large title collapsed on scroll. Its la
 standard one that collapses into the bar (`NativeTabHeader`'s `largeTitle="always"`): a stacked
 field hangs off that title's own row, which the tabs' `inline` title doesn't have. That tab is the
 Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
-filters), and before anything is typed it lists the sources (`SearchSources`). Its list's bottom
+filters), and before anything is typed it lists the sources (`SearchSources`). That menu is Browse's
+kind (`useSearchSourceMenu` through `NavBarLeadingMenu`): the picked source's circle as the button
+and each source's tile on its row, set in place; in the header config it went stale and doubled. Its list's bottom
 inset follows the keyboard (`keyboardInsets`). It is where iOS finds things: Browse has no search button, and
 Library's and Recent's magnifiers only narrow what the tab shows (`NativeTabHeader`'s filter; a
 pull-down field under the title was tried and fought the `inline` title). The Search screen, every mode, matches your library almost as you

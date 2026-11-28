@@ -22,6 +22,8 @@ import { SeriesGrid } from '@/components/series-grid';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { NativeTabHeader } from '@/components/native-tab-header';
+import { NavBarLeadingMenu, navBarLeadingMenuItem } from '@/components/nav-bar-leading-menu';
+import { useSearchSourceMenu } from '@/components/search-source-menu';
 import { SearchSources } from '@/components/search-sources';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -167,6 +169,7 @@ export default function SearchScreen({
     bridgesLoaded,
     bridges,
     visibleBridges,
+    bridgeThumbnails,
     refetchBridges,
   } = useInheritedBridge(docked || tab ? COMICAL_BRIDGE_ID : undefined);
 
@@ -605,6 +608,13 @@ export default function SearchScreen({
   // the bar on scroll, the one a stacked field hangs off; the tabs' `inline` one has no row for it.
   // The scope menu leads the items.
   const sources = visibleBridges.filter((b) => b.id !== COMICAL_BRIDGE_ID);
+  const sourceMenu = useSearchSourceMenu({
+    enabled: tab && nativeBar,
+    sources,
+    thumbnails: bridgeThumbnails,
+    bridgeId,
+    onSelect: setBridge,
+  });
   const clear = () => {
     setTyped('');
     setQuery('');
@@ -628,21 +638,7 @@ export default function SearchScreen({
       />
       {(tab || hasFilters || sortOptions.length > 0) && (
         <Stack.Toolbar placement="right">
-          {tab && (
-            <Stack.Toolbar.Menu icon="chevron.up.chevron.down" accessibilityLabel="What to search">
-              <Stack.Toolbar.Label>{isComical ? 'Everything' : (currentBridge?.name ?? 'Everything')}</Stack.Toolbar.Label>
-              <Stack.Toolbar.MenuAction isOn={isComical} onPress={() => setBridge(COMICAL_BRIDGE_ID)}>
-                Everything
-              </Stack.Toolbar.MenuAction>
-              <Stack.Toolbar.Menu inline title="Sources">
-                {sources.map((b) => (
-                  <Stack.Toolbar.MenuAction key={b.id} isOn={b.id === bridgeId} onPress={() => setBridge(b.id)}>
-                    {b.name}
-                  </Stack.Toolbar.MenuAction>
-                ))}
-              </Stack.Toolbar.Menu>
-            </Stack.Toolbar.Menu>
-          )}
+          {tab && navBarLeadingMenuItem(sourceMenu)}
           {hasFilters && (
             <Stack.Toolbar.Button
               icon={activeFilterCount > 0 ? 'line.3.horizontal.decrease.circle.fill' : 'line.3.horizontal.decrease.circle'}
@@ -666,6 +662,7 @@ export default function SearchScreen({
           )}
         </Stack.Toolbar>
       )}
+      {tab && <NavBarLeadingMenu {...sourceMenu} />}
     </>
   ) : null;
 
