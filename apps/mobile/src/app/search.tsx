@@ -22,7 +22,7 @@ import { SeriesGrid } from '@/components/series-grid';
 import { RetryBlock } from '@/components/retry-block';
 import { SearchField } from '@/components/search-field';
 import { NativeTabHeader } from '@/components/native-tab-header';
-import { NavBarLeadingMenu, navBarLeadingMenuItem } from '@/components/nav-bar-leading-menu';
+import { NavBarLeadingMenu, navBarLeadingMenuItem, useMenuLeads } from '@/components/nav-bar-leading-menu';
 import { useSearchSourceMenu } from '@/components/search-source-menu';
 import { SearchSources } from '@/components/search-sources';
 import { ThemedText } from '@/components/themed-text';
@@ -632,16 +632,20 @@ export default function SearchScreen({
     setQuery('');
   };
   // Whether the field is in use: from its first focus to its ✕, the system's own active search,
-  // which outlasts the keyboard. While it is, the bar goes (`hides`, the system's default; its items
-  // stay where UIKit keeps them) or stays, titled or not (Settings → Developer).
+  // which outlasts the keyboard. While it is, the bar goes where its items stand in a side column,
+  // which stays when the bar goes, and stays, titled, where it runs along the top: gone, it took
+  // the source, filters and sort with it, and no scroll brings it back during a search. The other
+  // ways are trials (Settings → Developer).
   const barTrial = useSearchBarTrial();
   const titleTrial = useSearchTitleTrial();
+  const barAlongTop = useMenuLeads();
   const [searching, setSearching] = useState(false);
-  const barHides = tab && barTrial === 'hides';
+  const barHides = tab && (barTrial === 'hides' || (barTrial === 'auto' && !barAlongTop));
+  const barTitled = barTrial === 'titled' || (barTrial === 'auto' && barAlongTop);
   const nativeItems = nativeBar ? (
     <>
       {tab ? (
-        <NativeTabHeader title="Search" largeTitle={titleTrial} barTitle={barTrial === 'titled' && searching} />
+        <NativeTabHeader title="Search" largeTitle={titleTrial} barTitle={barTitled && searching} />
       ) : (
         <Stack.Screen options={{ title: '' }} />
       )}

@@ -33,6 +33,7 @@ const HERO_STYLES = [
 ] as const;
 
 const SEARCH_BARS = [
+  { value: 'auto', label: 'Automatic' },
   { value: 'hides', label: 'Hides' },
   { value: 'titled', label: 'Stays, titled' },
   { value: 'kept', label: 'Stays, buttons only' },
@@ -96,7 +97,7 @@ export default function DeveloperSettingsScreen() {
         select<SearchBarTrial>({
           label: 'Search tab bar while searching',
           description:
-            'A trial, iOS only. What the Search tab’s bar does while its field is in use: goes, as the App Store’s does; stays with a small “Search” in it; or stays with only its buttons.',
+            'A trial, iOS only. What the Search tab’s bar does while its field is in use: goes where its buttons stand in a side column and stays, titled, where it runs along the top; goes everywhere, as the App Store’s does; stays with a small “Search” in it; or stays with only its buttons.',
           value: searchBar,
           options: SEARCH_BARS,
           onChange: setSearchBarTrial,

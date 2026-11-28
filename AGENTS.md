@@ -109,8 +109,11 @@ collapsing into the bar on scroll, stood under the bar where no other tab's does
 trial in Settings → Developer (`useSearchTitleTrial`). Its list is the one the system insets by the
 bars (`systemInsets`), as a native app's is: a title shrinking with the finger follows it only over
 such a list, and padded for its bar by hand, as every other list here is, it snapped between its
-sizes and the list jumped with the bar. While the field is in use the bar goes, the system's
-default (`hidesNavigationBarDuringPresentation`); its items stay where UIKit keeps them. A row of
+sizes and the list jumped with the bar. While the field is in use the bar goes where its items
+stand in a side column (the folded Duo, a phone on its side), the system's default
+(`hidesNavigationBarDuringPresentation`), since the column stays when the bar goes; where the bar
+runs along the top (`useMenuLeads`) it stays, with a small "Search" in it, since gone it took the
+source, filters and sort with it and no scroll brings it back during a search. A row of
 the source, filters and sort under the field, where Music puts its scope bar, was built and taken
 out: the bar's own items were the better controls. Kept instead, the bar was a row with nothing in
 it beside a side column, and one lone button over the field in portrait; the kept bar, titled or

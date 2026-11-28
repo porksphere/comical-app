@@ -5,10 +5,11 @@ import { PROFILING_ENABLED } from '@/lib/profiling';
 
 /**
  * What the iOS search tab's bar does while its field is in use (Settings → Developer, a trial):
- * `hides`, the system's default; `titled`, the bar kept with a small "Search" in it; `kept`, the
- * bar kept with only its buttons.
+ * `auto`, hidden where its items stand in a side column and kept, titled, where the bar runs along
+ * the top; `hides`, the system's default, everywhere; `titled`, the bar kept with a small "Search"
+ * in it; `kept`, the bar kept with only its buttons.
  */
-export type SearchBarTrial = 'hides' | 'titled' | 'kept';
+export type SearchBarTrial = 'auto' | 'hides' | 'titled' | 'kept';
 
 /** Where the search tab's large title stands: on the bar's own row as every tab's does (`inline`),
  *  or on a row of its own under the items, collapsing into the bar on scroll (`always`). */
@@ -19,7 +20,7 @@ const trial$ = persisted$<{ bar?: SearchBarTrial; title?: SearchTitleTrial }>('c
 
 /** Only in a build that has the Developer screen, as the home hero's trial is. */
 export function useSearchBarTrial(): SearchBarTrial {
-  return useSelector(() => (PROFILING_ENABLED ? (trial$.bar.get() ?? 'hides') : 'hides'));
+  return useSelector(() => (PROFILING_ENABLED ? (trial$.bar.get() ?? 'auto') : 'auto'));
 }
 
 export function setSearchBarTrial(bar: SearchBarTrial): void {
