@@ -104,7 +104,11 @@ on a tap (`disableAutomaticSearchActivation`, which on iOS 27 also keeps the tab
 the others). The prominent kind, apart at the bar's end with the keyboard up as it opens, was the
 first cut, and under it the tab's inline large title collapsed on scroll. Its large title is the
 standard one that collapses into the bar (`NativeTabHeader`'s `largeTitle="always"`): a stacked
-field hangs off that title's own row, which the tabs' `inline` title doesn't have. That tab is the
+field hangs off that title's own row, which the tabs' `inline` title doesn't have. Its list is the
+one the system insets by the bars (`systemInsets`), as a native app's is: that title shrinks with
+the finger only over such a list, and padded for its bar by hand, as every other list here is, it
+snapped between its sizes and the list jumped with the bar. The bar stays while the field is in
+use: the source menu, filters and sort are in it. That tab is the
 Search screen's `tab` mode: it starts on every bridge, a menu in the bar picks one source (and its
 filters), and before anything is typed it lists the sources (`SearchSources`). That menu is Browse's
 kind (`useSearchSourceMenu` through `NavBarLeadingMenu`): the picked source's circle as the button

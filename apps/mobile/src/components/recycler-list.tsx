@@ -58,6 +58,7 @@ export function RecyclerList<T>({
   scrollGesture,
   scrollEnabled,
   keyboardInsets,
+  systemInsets,
 }: {
   data: T[];
   /** Identifies the current scope (bridge/page/query/…); folded into the list `key` so a scope
@@ -135,6 +136,10 @@ export function RecyclerList<T>({
   /** iOS: the list's bottom inset grows with the keyboard, so a screen typed into above the list
    *  (the search tab) can still scroll its last rows into view. */
   keyboardInsets?: boolean;
+  /** iOS: the system insets the list by the bars itself, so a large title that collapses into its
+   *  bar on scroll follows the finger; padding the list for the bar instead, the title only snapped
+   *  between its two sizes. `paddingTop`/`paddingBottom` are then what goes inside the bars. */
+  systemInsets?: boolean;
 }) {
   // LegendList's web build resets its render state *during* render on an empty→non-empty data swap
   // after it has held data ("Cannot update a component while rendering a different component"). Fold
@@ -200,6 +205,7 @@ export function RecyclerList<T>({
           // offset works regardless.
           scrollEnabled={scrollEnabled}
           automaticallyAdjustKeyboardInsets={keyboardInsets}
+          contentInsetAdjustmentBehavior={systemInsets ? 'automatic' : undefined}
           renderScrollComponent={
             Platform.OS === 'web' ? (scrollProps) => <Animated.ScrollView {...scrollProps} /> : undefined
           }

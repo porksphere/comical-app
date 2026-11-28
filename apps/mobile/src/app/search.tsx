@@ -47,7 +47,6 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
-import { useWindowSize } from '@/hooks/use-window-size';
 import { useOpenLink } from '@/hooks/use-open-link';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
@@ -139,15 +138,6 @@ export default function SearchScreen({
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
   const topChrome = useTopChromeHeight();
-  // The search tab's large title collapses into the bar on scroll, and the bar's height with it.
-  // Padded by the height as it went, the list moved, which moved the title, and the two chased each
-  // other up and down. So it pads by the tallest the bar has been in this window, as the other
-  // tabs pad by their bar at rest.
-  const { width: windowWidth, height: windowHeight } = useWindowSize();
-  const pose = `${windowWidth}x${windowHeight}`;
-  const [tallestChrome, setTallestChrome] = useState({ pose, top: topChrome });
-  if (tab && (tallestChrome.pose !== pose || topChrome > tallestChrome.top)) setTallestChrome({ pose, top: topChrome });
-  const restingChrome = tab && tallestChrome.pose === pose ? Math.max(topChrome, tallestChrome.top) : topChrome;
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   const listRef = useRef<LegendListRef>(null);
   const navigation = useNavigation();
@@ -446,7 +436,14 @@ export default function SearchScreen({
   // Full height the (overlaid) top bar occupies — status bar + the bar itself, or the system bar
   // with its field. Everything below it positions from here: the filter bar's clip window, the
   // grid's top padding, the pull spinner.
-  const topBarTotal = nativeBar ? restingChrome : insets.top + barHeight;
+  const topBarTotal = nativeBar ? topChrome : insets.top + barHeight;
+  // The search tab's large title collapses into its bar on scroll, which follows the finger only
+  // over a list the system insets by the bars itself (`systemInsets`); padded for the bar by hand,
+  // as every other screen's list is, the title snapped between its sizes and the list jumped with
+  // the bar's height. So there the padding is only what sits inside the bars.
+  const systemInsets = tab && nativeBar;
+  const listTop = (systemInsets ? 0 : topBarTotal) + filtersBarH + BarContentGap;
+  const listBottom = (systemInsets ? 0 : insets.bottom) + Spacing.five;
 
   // The filters sheet reads this screen's filters through data/filter-sheet.ts (it cannot reach
   // them any other way — see there). Republished on every change while this screen owns the
@@ -838,8 +835,8 @@ export default function SearchScreen({
                 scopeKey={searched || 'blank'}
                 listRef={listRef}
                 header={comicalHint}
-                paddingTop={topBarTotal + filtersBarH + BarContentGap}
-                paddingBottom={insets.bottom + Spacing.five}
+                paddingTop={listTop}
+                paddingBottom={listBottom}
                 sharedValues={sharedValues}
                 scrollRef={scrollRef}
                 onScroll={onListScroll}
@@ -848,6 +845,7 @@ export default function SearchScreen({
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
                 keyboardInsets
+                systemInsets={systemInsets}
               />
             ) : (
               <SeriesGrid
@@ -857,8 +855,8 @@ export default function SearchScreen({
                 header={emptyBody}
                 // The top bar OVERLAYS the list (results scroll behind it), so reserve it as well
                 // as the filter bar beneath it, plus a little breathing room.
-                paddingTop={topBarTotal + filtersBarH + BarContentGap}
-                paddingBottom={insets.bottom + Spacing.five}
+                paddingTop={listTop}
+                paddingBottom={listBottom}
                 bridge={currentBridge?.name ?? undefined}
                 bridgeId={bridgeId}
                 direct={directBridge}
@@ -872,6 +870,7 @@ export default function SearchScreen({
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
                 keyboardInsets
+                systemInsets={systemInsets}
               />
             ))}
           {ready && filterBar}

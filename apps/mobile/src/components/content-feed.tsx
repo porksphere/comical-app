@@ -136,6 +136,7 @@ export function ContentFeed({
   scrollGesture,
   scrollEnabled,
   keyboardInsets,
+  systemInsets,
 }: {
   rows: ContentRow[];
   /** Feeds the list `key` and the terminal cards' recycle `cohort` (reset on scope change). */
@@ -188,6 +189,8 @@ export function ContentFeed({
   scrollEnabled?: boolean;
   /** Passed through to `RecyclerList` — the bottom inset follows the keyboard. */
   keyboardInsets?: boolean;
+  /** Passed through to `RecyclerList` — the system insets the list by the bars. */
+  systemInsets?: boolean;
 }) {
   const { numColumns, cardWidth, columnGap, rowGap, books, railViewport, width, gutter, insets } = useGridLayout();
   // A terminal cell reserves its row gap the way a results-grid cell does (see `SeriesGrid`), so a home
@@ -434,6 +437,7 @@ export function ContentFeed({
       scrollGesture={scrollGesture}
       scrollEnabled={scrollEnabled}
       keyboardInsets={keyboardInsets}
+      systemInsets={systemInsets}
       renderItem={({ item }) => {
         switch (item.type) {
           case 'sectionHead':
