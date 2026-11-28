@@ -612,10 +612,12 @@ export default function SearchScreen({
         ref={searchBarRef}
         placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
         placement={tab ? 'automatic' : 'integratedCentered'}
-        // The search tab keeps the system's defaults for both, as the tabs' filters do: with the
-        // field held through a scroll and the bar held through a search, its inline large title
-        // collapsed into the bar's small centred one on scroll, as no other tab's does.
-        {...(!tab && { hideWhenScrolling: false, hideNavigationBar: false })}
+        // The search tab leaves the scroll to the system, as the tabs' filters do: with the field
+        // held through a scroll, its inline large title collapsed into the bar's small centred one,
+        // as no other tab's does. The bar is held through a search everywhere; the system's own
+        // choice there hid it, title and menu, for as long as the field was in use.
+        {...(!tab && { hideWhenScrolling: false })}
+        hideNavigationBar={false}
         obscureBackground={false}
         autoCapitalize="none"
         onChangeText={(e) => setTyped(e.nativeEvent.text)}
