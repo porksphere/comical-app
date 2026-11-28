@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import { useAnimatedStyle, useDerivedValue, type SharedValue } from 'react-native-reanimated';
 
 import { REFRESH_MIN_VISIBLE_MS } from '@/components/pull-indicator';
 import { useNativePullToRefresh } from '@/hooks/use-native-pull-to-refresh';
@@ -73,6 +73,8 @@ export function usePullToRefresh(scrollY: SharedValue<number>, refresh: () => Pr
   const listStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: pull.listTranslateY.value }],
   }));
+  // How far the top of the content stands below its rest, by the bounce or the shift alike.
+  const pulled = useDerivedValue(() => Math.max(0, -scrollY.value) + pull.listTranslateY.value);
 
   return {
     refreshing,
@@ -84,6 +86,8 @@ export function usePullToRefresh(scrollY: SharedValue<number>, refresh: () => Pr
         : { onTouchStart: touchPull.onTouchStart, onTouchMove: touchPull.onTouchMove, onTouchEnd: touchPull.onTouchEnd },
     /** Pass to the list. iOS-only: a release past the threshold triggers the refresh. */
     onScrollEndDrag: Platform.OS === 'ios' ? nativePull.onScrollEndDrag : undefined,
+    /** How far the content's top is pulled below its rest, for a backdrop that has to reach it. */
+    pulled,
     /** Spread into `<PullIndicator {...indicator} top={…} />`. */
     indicator: { pullY: pull.pullY, pullThreshold: pull.pullThreshold, refreshing, scrollY },
   };

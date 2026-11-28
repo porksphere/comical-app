@@ -187,12 +187,15 @@ function PosterBook({
  * own colours out of focus. On a phone the book stands in the middle with its words under it. In a
  * wide window the words stand beside it. With a `row` the others stand to either side, smaller
  * and fainter, and a drag runs along them; without one the book stands alone and each gives way to
- * the next. `bleed` is how far the colours run up past the feed's content, under the bar.
+ * the next. `bleed` is how far the colours run up past the feed's content, under the bar, and
+ * `pulled` how far the page is pulled down past its top, which they stretch up to fill: left where
+ * they were, they ended in a hard edge over the page's own colour.
  */
 export function PosterStage({
   entries,
   width,
   bleed,
+  pulled,
   row,
   opens,
   testID,
@@ -200,6 +203,7 @@ export function PosterStage({
   entries: readonly BookshelfEntry[];
   width: number;
   bleed: number;
+  pulled?: SharedValue<number>;
   row: boolean;
   /** Where the hero opens among `entries`. */
   opens: number;
@@ -238,6 +242,10 @@ export function PosterStage({
   });
   const frontRef = useRef<ViewInstance>(null);
   const open = useHeroOpen(shown, frontRef, largeCoverRadius(frontBook));
+  const backdropHeight = stageHeight + bleed;
+  const stretch = useAnimatedStyle(() => ({
+    transform: [{ scaleY: 1 + Math.max(0, pulled?.get() ?? 0) / backdropHeight }],
+  }));
   if (!shown || !open) return null;
 
   const { opening, read, details } = open;
@@ -252,13 +260,13 @@ export function PosterStage({
     <View style={{ height: stageHeight + PAGE_DOTS_HEIGHT + UNDER_DOTS }} testID={testID}>
       <GestureDetector gesture={pager.pan}>
         <View style={{ width: stage.width, height: stageHeight, marginLeft: -stage.lead }}>
-          <View pointerEvents="none" style={[styles.backdrop, { top: -bleed }]}>
+          <Animated.View pointerEvents="none" style={[styles.backdrop, { top: -bleed }, stretch]}>
             {entries.map((entry, index) =>
               Math.abs(index - pager.index) <= 1 ? <PosterGlow key={entry.key} entry={entry} index={index} position={pager.position} /> : null,
             )}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background, opacity: dark ? 0.35 : 0.5 }]} />
             <HeroFades foot={Math.round(stageHeight * 0.55)} />
-          </View>
+          </Animated.View>
           {entries.map((entry, index) =>
             Math.abs(index - pager.index) <= reach ? (
               <PosterBook
@@ -312,12 +320,22 @@ const noop = () => {};
  * the others smaller to either side, over the front one's own colours. A trial beside the shelf
  * (Settings → Developer), of the shelf's own books stood as the shelf stands them.
  */
-export function HomePoster({ entries, width, bleed }: { entries: readonly BookshelfEntry[]; width: number; bleed: number }) {
-  return <PosterStage entries={entries} width={width} bleed={bleed} row opens={shelfMiddle(entries.length)} testID="home-poster" />;
+export function HomePoster({
+  entries,
+  width,
+  bleed,
+  pulled,
+}: {
+  entries: readonly BookshelfEntry[];
+  width: number;
+  bleed: number;
+  pulled?: SharedValue<number>;
+}) {
+  return <PosterStage entries={entries} width={width} bleed={bleed} pulled={pulled} row opens={shelfMiddle(entries.length)} testID="home-poster" />;
 }
 
 const styles = StyleSheet.create({
-  backdrop: { position: 'absolute', left: 0, right: 0, bottom: 0, overflow: 'hidden' },
+  backdrop: { position: 'absolute', left: 0, right: 0, bottom: 0, overflow: 'hidden', transformOrigin: 'bottom' },
   glow: { position: 'absolute', left: -GLOW_SPILL, right: -GLOW_SPILL, top: -GLOW_SPILL, bottom: -GLOW_SPILL },
   book: { position: 'absolute', alignItems: 'center', justifyContent: 'flex-end' },
   zoomAt: { position: 'absolute', left: 0, top: 0 },

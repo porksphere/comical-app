@@ -635,38 +635,6 @@ export default function BrowseScreen() {
   // expand-at-top/collapse-on-scroll animation, the bar itself never changes size —
   // instead it slides as a whole (see `headerStyle` below), X/Twitter-style.
   const headerHeight = useTopChromeHeight();
-  // Comical Home opens on the bookshelf: what the reader is in the middle of, ahead of the rails. Not
-  // on Favorites or a custom page, which are the reader's own arrangements, and not once its
-  // renderer has failed to start, when the rails simply begin the page as before.
-  //
-  // On trial beside it (Settings → Developer) are two flat heroes of the same series: the splash,
-  // which opens on the one read last and so takes them in order of how much each matters, and the
-  // poster, which stands them as the shelf does. Neither needs the shelf's renderer.
-  const heroStyle = useHomeHeroStyle();
-  const bookshelfOn = useHomeBookshelf();
-  const bookshelfAvailable = useHomeBookshelfAvailable();
-  const bookshelfShown =
-    bookshelfOn && (heroStyle !== 'shelf' || bookshelfAvailable) && isComical && !activeFavoritesPage && !activeCustomPage;
-  const bookshelf = useBookshelfEntries(bookshelfShown, heroStyle === 'splash');
-  const { height: windowHeight } = useWindowSize();
-  // A flat hero's picture runs up under the bar, which is bare over it at the top of the page: the
-  // system's bar on iOS, and the app's own elsewhere (`heroUnderBar` below).
-  const heroTop = headerHeight + BarContentGap;
-  const bookshelfHero = useMemo(() => {
-    if (!bookshelfShown || !bookshelf.length) return null;
-    if (heroStyle === 'splash') {
-      const splash = { width: railViewport, top: heroTop, bleed: heroTop };
-      return { element: <HomeSplash entries={bookshelf} {...splash} />, height: homeSplashHeight({ ...splash, windowHeight }) };
-    }
-    if (heroStyle === 'poster') {
-      return {
-        element: <HomePoster entries={bookshelf} width={railViewport} bleed={heroTop} />,
-        height: homePosterHeight(railViewport, windowHeight),
-      };
-    }
-    return { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) };
-  }, [bookshelfShown, bookshelf, railViewport, heroStyle, heroTop, windowHeight]);
-  const heroUnderBar = !NATIVE_HEADER && heroStyle !== 'shelf' && !!bookshelfHero;
 
   // The bridge/page bar slides up 1:1 with scroll (X/Twitter-style) via the shared `useSlidingBar`
   // helper — the same one the Search filter bar uses, so their motion can't drift. The slide
@@ -699,6 +667,38 @@ export default function BrowseScreen() {
   // Pull-to-refresh: gesture (per platform), spinner, min-visible window and content shift all live
   // in the shared hook — the same one the Search grid uses.
   const pull = usePullToRefresh(scrollY, refreshCurrentView);
+  // Comical Home opens on the bookshelf: what the reader is in the middle of, ahead of the rails. Not
+  // on Favorites or a custom page, which are the reader's own arrangements, and not once its
+  // renderer has failed to start, when the rails simply begin the page as before.
+  //
+  // On trial beside it (Settings → Developer) are two flat heroes of the same series: the splash,
+  // which opens on the one read last and so takes them in order of how much each matters, and the
+  // poster, which stands them as the shelf does. Neither needs the shelf's renderer.
+  const heroStyle = useHomeHeroStyle();
+  const bookshelfOn = useHomeBookshelf();
+  const bookshelfAvailable = useHomeBookshelfAvailable();
+  const bookshelfShown =
+    bookshelfOn && (heroStyle !== 'shelf' || bookshelfAvailable) && isComical && !activeFavoritesPage && !activeCustomPage;
+  const bookshelf = useBookshelfEntries(bookshelfShown, heroStyle === 'splash');
+  const { height: windowHeight } = useWindowSize();
+  // A flat hero's picture runs up under the bar, which is bare over it at the top of the page: the
+  // system's bar on iOS, and the app's own elsewhere (`heroUnderBar` below).
+  const heroTop = headerHeight + BarContentGap;
+  const bookshelfHero = useMemo(() => {
+    if (!bookshelfShown || !bookshelf.length) return null;
+    if (heroStyle === 'splash') {
+      const splash = { width: railViewport, top: heroTop, bleed: heroTop };
+      return { element: <HomeSplash entries={bookshelf} {...splash} />, height: homeSplashHeight({ ...splash, windowHeight }) };
+    }
+    if (heroStyle === 'poster') {
+      return {
+        element: <HomePoster entries={bookshelf} width={railViewport} bleed={heroTop} pulled={pull.pulled} />,
+        height: homePosterHeight(railViewport, windowHeight),
+      };
+    }
+    return { element: <HomeBookshelf entries={bookshelf} width={railViewport} />, height: homeBookshelfHeight(railViewport) };
+  }, [bookshelfShown, bookshelf, railViewport, heroStyle, heroTop, windowHeight, pull.pulled]);
+  const heroUnderBar = !NATIVE_HEADER && heroStyle !== 'shelf' && !!bookshelfHero;
   // A pinned section heading sits flush under the bar and draws its own rule, so the bar YIELDS its
   // own while one is up — otherwise the chrome reads as two banded edges a heading apart instead of
   // one surface. A shared value, written by the sticky on the UI thread and read here in an animated
