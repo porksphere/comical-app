@@ -47,6 +47,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useDeferredMount } from '@/hooks/use-deferred-mount';
 import { useGridLayout } from '@/hooks/use-grid-layout';
 import { NATIVE_HEADER, useTopChromeHeight } from '@/hooks/use-native-header';
+import { useWindowSize } from '@/hooks/use-window-size';
 import { useOpenLink } from '@/hooks/use-open-link';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useRevealDim } from '@/hooks/use-reveal-dim';
@@ -138,6 +139,15 @@ export default function SearchScreen({
   const insets = useSafeAreaInsets();
   const barHeight = useTopBarHeight();
   const topChrome = useTopChromeHeight();
+  // The search tab's large title collapses into the bar on scroll, and the bar's height with it.
+  // Padded by the height as it went, the list moved, which moved the title, and the two chased each
+  // other up and down. So it pads by the tallest the bar has been in this window, as the other
+  // tabs pad by their bar at rest.
+  const { width: windowWidth, height: windowHeight } = useWindowSize();
+  const pose = `${windowWidth}x${windowHeight}`;
+  const [tallestChrome, setTallestChrome] = useState({ pose, top: topChrome });
+  if (tab && (tallestChrome.pose !== pose || topChrome > tallestChrome.top)) setTallestChrome({ pose, top: topChrome });
+  const restingChrome = tab && tallestChrome.pose === pose ? Math.max(topChrome, tallestChrome.top) : topChrome;
   const clearance = useWindowControlsClearance(MaxTopLevelWidth);
   const listRef = useRef<LegendListRef>(null);
   const navigation = useNavigation();
@@ -436,7 +446,7 @@ export default function SearchScreen({
   // Full height the (overlaid) top bar occupies — status bar + the bar itself, or the system bar
   // with its field. Everything below it positions from here: the filter bar's clip window, the
   // grid's top padding, the pull spinner.
-  const topBarTotal = nativeBar ? topChrome : insets.top + barHeight;
+  const topBarTotal = nativeBar ? restingChrome : insets.top + barHeight;
 
   // The filters sheet reads this screen's filters through data/filter-sheet.ts (it cannot reach
   // them any other way — see there). Republished on every change while this screen owns the
