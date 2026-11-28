@@ -391,7 +391,9 @@ list it shows is a persisted scope of the tab (`hooks/use-recent-view.ts`), the 
 `components/recent/history-view.tsx` and `activity-view.tsx`, and `RecentSwitch` switches them
 as the list's first row (and above an empty state) — the system's segmented control on iOS
 (`recent-switch.ios.tsx`), tabs on Android and web. In the list rather than pinned under the bar,
-because on iOS nothing may stand between the bar and its list. The labelled sidebar lists the views
+because on iOS nothing may stand between the bar and its list. Each view's list draws its own
+control, so the view changes once the tapped control's thumb has slid (`THUMB_SLIDE_MS`): changed on
+the tap, the control under the finger was replaced by one already on the other side. The labelled sidebar lists the views
 as rows of their own (`sidebar-recent.tsx`), so there the screen leaves the switch out and titles
 its bar with the view (`RecentBar`, `useSidebarListsScopes`); everywhere else the bar says
 "Recent". `/recent?view=new` opens New chapters (the desktop's notification). The digit keys kept
