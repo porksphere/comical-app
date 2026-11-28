@@ -637,9 +637,10 @@ export default function SearchScreen({
         placeholder={tab && !isComical && currentBridge ? `Search ${currentBridge.name}` : 'Search…'}
         placement={tab ? 'stacked' : 'integratedCentered'}
         hideWhenScrolling={false}
-        // The search tab leaves the bar to the system, which hides it, title and all, while the field
-        // is in use, so the field floats at the top over the results as the App Store's does.
-        {...(!tab && { hideNavigationBar: false })}
+        // Held through a search everywhere. Left to the system, the search tab's bar went while the
+        // field was in use, and the source menu, filters and sort with it, which the App Store's
+        // floating field can do without and this search can't; the bar's leaving jumped the page too.
+        hideNavigationBar={false}
         obscureBackground={false}
         autoCapitalize="none"
         onChangeText={(e) => setTyped(e.nativeEvent.text)}
