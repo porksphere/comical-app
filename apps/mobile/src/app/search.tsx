@@ -584,6 +584,9 @@ export default function SearchScreen({
   const pull = usePullToRefresh(scrollY, () =>
     isComical ? comicalSearch.refetch() : scope ? resultsQuery.refetch() : Promise.resolve(),
   );
+  // Not over the search tab's system-inset list: its top rests at minus the bars' height, which the
+  // pull reads as a pull held for good, the spinner never leaving and the list pinned under it.
+  const refreshable = !systemInsets;
 
   const loadMore = () => {
     if (!scope || !resultsQuery.hasNextPage || resultsQuery.isFetchingNextPage) return;
@@ -840,8 +843,8 @@ export default function SearchScreen({
                 sharedValues={sharedValues}
                 scrollRef={scrollRef}
                 onScroll={onListScroll}
-                onScrollEndDrag={pull.onScrollEndDrag}
-                wrapperStyle={pull.listStyle}
+                onScrollEndDrag={refreshable ? pull.onScrollEndDrag : undefined}
+                wrapperStyle={refreshable ? pull.listStyle : undefined}
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
                 keyboardInsets
@@ -864,9 +867,9 @@ export default function SearchScreen({
                 scrollRef={scrollRef}
                 onScroll={onListScroll}
                 onEndReached={loadMore}
-                onScrollEndDrag={pull.onScrollEndDrag}
+                onScrollEndDrag={refreshable ? pull.onScrollEndDrag : undefined}
                 // The pull-to-refresh content shift and the re-search dim both ride the list wrapper.
-                wrapperStyle={[pull.listStyle, listDimStyle]}
+                wrapperStyle={[refreshable ? pull.listStyle : null, listDimStyle]}
                 scrollGesture={embedded?.scrollGesture}
                 scrollEnabled={embedded?.scrollEnabled}
                 keyboardInsets
@@ -875,7 +878,7 @@ export default function SearchScreen({
             ))}
           {ready && filterBar}
           {/* Settles just below the bars, in the gap the pull opens. */}
-          <PullIndicator {...pull.indicator} top={topBarTotal + filtersBarH} />
+          {refreshable && <PullIndicator {...pull.indicator} top={topBarTotal + filtersBarH} />}
         </View>
       )}
     </ThemedView>
